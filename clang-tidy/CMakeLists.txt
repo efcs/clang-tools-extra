@@ -28,6 +28,7 @@ add_clang_library(clangTidy
 add_subdirectory(tool)
 add_subdirectory(cert)
 add_subdirectory(llvm)
+add_subdirectory(libcxx)
 add_subdirectory(cppcoreguidelines)
 add_subdirectory(google)
 add_subdirectory(misc)
