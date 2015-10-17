@@ -39,7 +39,8 @@ UnqualifiedFunctionCallCheck::registerMatchers(ast_matchers::MatchFinder *Finder
         namespaceDecl(isStdNamespace(),
               hasDescendant(
        callExpr(
-         unless(anyOf(cxxMemberCallExpr(), cxxOperatorCallExpr()))
+         unless(anyOf(cxxMemberCallExpr(), cxxOperatorCallExpr())),
+         unless(hasDescendant(nestedNameSpecifier()))
          ).bind("decl"))), this);
 }
 
