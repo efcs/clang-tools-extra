@@ -38,6 +38,21 @@ static bool isReservedName(const IdentifierInfo *Id) {
          (Name[1] == '_' || (Name[1] >= 'A' && Name[1] <= 'Z'));
 }
 
+static bool isInStdNamespace(const Decl *D) {
+  const DeclContext *DC = D->getDeclContext()->getEnclosingNamespaceContext();
+  const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(DC);
+  if (!ND)
+    return false;
+
+  while (const NamespaceDecl *Parent = dyn_cast<NamespaceDecl>(ND)) {
+    if (!isa<NamespaceDecl>(Parent))
+      break;
+    ND = cast<NamespaceDecl>(Parent);
+  }
+
+  return ND->isStdNamespace();
+}
+
 
 void
 ReservedNameCheck::registerMatchers(ast_matchers::MatchFinder *Finder) {
