@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ReservedNameCheck.h"
+#include "LibcxxCheckUtil.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -17,42 +18,21 @@
 using namespace clang::ast_matchers;
 
 namespace clang {
+namespace tidy {
+namespace libcxx {
 
-// FIXME
+
 namespace {
 AST_MATCHER(VarDecl, isLocalVarDeclOrParm) {
   return Node.isLocalVarDeclOrParm();
 }
-} // end namespace
-
-namespace tidy {
-namespace libcxx {
-
-/// Determine whether \p Id is a name reserved for the implementation (C99
-/// 7.1.3, C++ [lib.global.names]).
-static bool isReservedName(const IdentifierInfo *Id) {
-  if (Id->getLength() < 2)
-    return false;
-  const char *Name = Id->getNameStart();
-  return Name[0] == '_' &&
-         (Name[1] == '_' || (Name[1] >= 'A' && Name[1] <= 'Z'));
+AST_MATCHER(NamedDecl, hasIdentifier) {
+  return Node.getIdentifier() != nullptr;
 }
-
-static bool isInStdNamespace(const Decl *D) {
-  const DeclContext *DC = D->getDeclContext()->getEnclosingNamespaceContext();
-  const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(DC);
-  if (!ND)
-    return false;
-
-  while (const NamespaceDecl *Parent = dyn_cast<NamespaceDecl>(ND)) {
-    if (!isa<NamespaceDecl>(Parent))
-      break;
-    ND = cast<NamespaceDecl>(Parent);
-  }
-
-  return ND->isStdNamespace();
+AST_MATCHER(Decl, isWithinStdNamespaceMatcher) {
+  return isInStdNamespace(cast<Decl>(&Node));
 }
-
+}
 
 void
 ReservedNameCheck::registerMatchers(ast_matchers::MatchFinder *Finder) {
@@ -60,17 +40,29 @@ ReservedNameCheck::registerMatchers(ast_matchers::MatchFinder *Finder) {
         namedDecl(anyOf(
           templateTypeParmDecl(),
           nonTypeTemplateParmDecl(),
-          varDecl(isLocalVarDeclOrParm()))).bind("decl"),
+          varDecl(isLocalVarDeclOrParm()),
+          fieldDecl(isPrivate()),
+          cxxMethodDecl(isPrivate())),
+          hasIdentifier(),
+          isWithinStdNamespaceMatcher()).bind("decl"),
       this);
 }
 
 void
 ReservedNameCheck::check(const MatchFinder::MatchResult &Result){
   const auto* TD = Result.Nodes.getNodeAs<NamedDecl>("decl");
-  if (isReservedName(TD->getIdentifier()))
+  const IdentifierInfo *II = TD->getIdentifier();
+
+  if (!II || isReservedName(II))
+    return;
+  SourceLocation L = TD->getLocation();
+
+  StringRef Filename = Result.SourceManager->getFilename(
+          Result.SourceManager->getSpellingLoc(L));
+  if (Filename.endswith(".cpp"))
     return;
 
-  diag(TD->getLocStart(), "non-reserved name '%0' used as identifier")
+  diag(L, "non-reserved name '%0' used as identifier")
     << TD->getName();
 }
 

@@ -11,6 +11,7 @@
 #include "../ClangTidyModule.h"
 #include "../ClangTidyModuleRegistry.h"
 #include "ReservedNameCheck.h"
+#include "UnqualifiedFunctionCallCheck.h"
 
 
 namespace clang {
@@ -22,6 +23,8 @@ public:
   void addCheckFactories(ClangTidyCheckFactories &CheckFactories) override {
     CheckFactories.registerCheck<ReservedNameCheck>(
             "libcxx-reserved-name-check");
+    CheckFactories.registerCheck<UnqualifiedFunctionCallCheck>(
+            "libcxx-unqualified-function-call-check");
   }
 };
 
