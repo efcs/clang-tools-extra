@@ -46,7 +46,15 @@ UnqualifiedFunctionCallCheck::registerMatchers(ast_matchers::MatchFinder *Finder
 
 void
 UnqualifiedFunctionCallCheck::check(const MatchFinder::MatchResult &Result) {
-  Result.Nodes.getNodeAs<CallExpr>("decl")->dump();
+  auto CE = Result.Nodes.getNodeAs<CallExpr>("decl");
+  auto Callee = CE->getCalleeDecl();
+  if (!Callee)
+    return;
+  auto NC = dyn_cast<NamedDecl>(Callee);
+  if (!NC || !NC->getIdentifier())
+    return;
+  NC->dump();
+
 }
 
 
