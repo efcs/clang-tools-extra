@@ -19,13 +19,32 @@ namespace clang {
 namespace tidy {
 namespace libcxx {
 
-AST_MATCHER(NamedDecl, isRedeclaration) {
+static bool isInstantiationOf(const FunctionDecl *Pattern,
+                              const FunctionDecl *Instance) {
+  if (!Pattern)
+    return false;
+  Pattern = Pattern->getCanonicalDecl();
+
+  do {
+    Instance = Instance->getCanonicalDecl();
+    if (Pattern == Instance) return true;
+    Instance = Instance->getInstantiatedFromMemberFunction();
+  } while (Instance);
+
+  return false;
+}
+
+AST_MATCHER(FunctionDecl, isRedeclaration) {
   if (auto *FD = dyn_cast<FunctionDecl>(&Node)) {
+    if (FD->isTemplateInstantiation())
+      return false;
+    if (isInstantiationOf(FD->getTemplateInstantiationPattern(), FD))
+      return false;
     auto TSK = FD->getTemplateSpecializationKind();
     if (TSK == TSK_ExplicitInstantiationDefinition
             || TSK == TSK_ExplicitInstantiationDeclaration)
       return false;
-    auto *NewFD = FD->getFirstDecl();
+    auto *NewFD = FD->getCanonicalDecl();
     if (NewFD == FD)
       return false;
     TSK = NewFD->getTemplateSpecializationKind();
@@ -81,11 +100,14 @@ static bool getMacroAndArgLocations(SourceManager &SM,  ASTContext &Context,
     llvm_unreachable("getMacroAndArgLocations");
 }
 
+
 void AttributeNotOnFirstDeclCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl(
+  Finder->addMatcher(functionDecl(allOf(
           hasAttr(attr::Visibility),
-         isRedeclaration()).bind("decl"), this);
+          isDefinition(),
+          unless(isInstantiated()),
+         isRedeclaration())).bind("decl"), this);
 }
 
 void AttributeNotOnFirstDeclCheck::check(const MatchFinder::MatchResult &Result) {
@@ -93,7 +115,7 @@ void AttributeNotOnFirstDeclCheck::check(const MatchFinder::MatchResult &Result)
   const auto *FD = Result.Nodes.getNodeAs<FunctionDecl>("decl");
   auto *VS = FD->getAttr<VisibilityAttr>();
   assert(FD && VS);
-  const FunctionDecl *First = FD->getFirstDecl();
+  const FunctionDecl *First = FD->getCanonicalDecl();
   assert(First);
   SourceLocation FixItLoc = First->getInnerLocStart();
   if (!FixItLoc.isValid()) {
@@ -101,6 +123,10 @@ void AttributeNotOnFirstDeclCheck::check(const MatchFinder::MatchResult &Result)
       First->dumpColor();
     return;
   }
+  if (isInstantiationOf(First->getTemplateInstantiationPattern(), FD))
+    return;
+  if (First->getLocation() == FD->getLocation())
+    return;
   auto &SM = *Result.SourceManager;
   auto &Context = *Result.Context;
   SourceLocation ArgLoc, MacroLoc;
@@ -110,6 +136,7 @@ void AttributeNotOnFirstDeclCheck::check(const MatchFinder::MatchResult &Result)
   std::string NamePlus = Name;
   NamePlus += ' ';
   Name = NamePlus;
+  assert(Name.size() > 1);
   if (FixItLoc.isValid()) {
     if (!First->hasAttr<VisibilityAttr>()) {
       diag(FD->getLocation(), "function %0 was declared without attribute")
@@ -117,7 +144,7 @@ void AttributeNotOnFirstDeclCheck::check(const MatchFinder::MatchResult &Result)
           << FixItHint::CreateInsertion(FixItLoc, Name)
           << FixItHint::CreateRemoval(ArgLoc);
     } else {
-      diag(ArgLoc, "function %0 was declared with duplicate attribute")
+      diag(FD->getLocation(), "function %0 was declared with duplicate attribute")
           << FD
           << FixItHint::CreateRemoval(ArgLoc);
     }
