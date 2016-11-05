@@ -18,6 +18,7 @@ target_link_libraries(clang-tidy
   clangTidyCppCoreGuidelinesModule
   clangTidyGoogleModule
   clangTidyLLVMModule
+  clangTidyLibcxxModule
   clangTidyMiscModule
   clangTidyModernizeModule
   clangTidyMPIModule
