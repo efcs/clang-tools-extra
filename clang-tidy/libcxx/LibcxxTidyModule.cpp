@@ -10,7 +10,9 @@
 #include "../ClangTidy.h"
 #include "../ClangTidyModule.h"
 #include "../ClangTidyModuleRegistry.h"
+#include "AttributeNotOnFirstDeclCheck.h"
 #include "HiddenExternTemplateCheck.h"
+#include "TemplateMissingInlineCheck.h"
 
 using namespace clang::ast_matchers;
 
@@ -21,9 +23,13 @@ namespace libcxx {
 class LibcxxModule : public ClangTidyModule {
 public:
   void addCheckFactories(ClangTidyCheckFactories &CheckFactories) override {
+    CheckFactories.registerCheck<AttributeNotOnFirstDeclCheck>(
+        "libcxx-attribute-not-on-first-decl");
     CheckFactories.registerCheck<HiddenExternTemplateCheck>(
         "libcxx-hidden-extern-template");
 
+    CheckFactories.registerCheck<TemplateMissingInlineCheck>(
+        "libcxx-template-missing-inline");
   }
 
   ClangTidyOptions getModuleOptions() override {

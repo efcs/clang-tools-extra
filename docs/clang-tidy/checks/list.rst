@@ -51,11 +51,13 @@ Clang-Tidy Checks
    google-runtime-memset
    google-runtime-operator
    google-runtime-references
+   libcxx-attribute-not-on-first-decl
+   libcxx-hidden-extern-template
+   libcxx-template-missing-inline
    llvm-header-guard
    llvm-include-order
    llvm-namespace-comment
    llvm-twine-local
-   libcxx-hidden-extern-template
    misc-argument-comment
    misc-assert-side-effect
    misc-bool-pointer-implicit-conversion
