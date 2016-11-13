@@ -53,6 +53,7 @@ Clang-Tidy Checks
    google-runtime-references
    libcxx-attribute-not-on-first-decl
    libcxx-hidden-extern-template
+   libcxx-reserved-names
    libcxx-template-missing-inline
    llvm-header-guard
    llvm-include-order

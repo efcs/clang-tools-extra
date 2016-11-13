@@ -38,8 +38,7 @@ AST_MATCHER(FunctionDecl, isRedeclaration) {
   if (auto *FD = dyn_cast<FunctionDecl>(&Node)) {
     if (FD->isTemplateInstantiation())
       return false;
-    if (isInstantiationOf(FD->getTemplateInstantiationPattern(), FD))
-      return false;
+
     auto TSK = FD->getTemplateSpecializationKind();
     if (TSK == TSK_ExplicitInstantiationDefinition
             || TSK == TSK_ExplicitInstantiationDeclaration)

@@ -4,6 +4,7 @@ add_clang_library(clangTidyLibcxxModule
   AttributeNotOnFirstDeclCheck.cpp
   LibcxxTidyModule.cpp
   HiddenExternTemplateCheck.cpp
+  ReservedNamesCheck.cpp
   TemplateMissingInlineCheck.cpp
 
   LINK_LIBS

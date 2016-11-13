@@ -12,6 +12,7 @@
 #include "../ClangTidyModuleRegistry.h"
 #include "AttributeNotOnFirstDeclCheck.h"
 #include "HiddenExternTemplateCheck.h"
+#include "ReservedNamesCheck.h"
 #include "TemplateMissingInlineCheck.h"
 
 using namespace clang::ast_matchers;
@@ -28,6 +29,8 @@ public:
     CheckFactories.registerCheck<HiddenExternTemplateCheck>(
         "libcxx-hidden-extern-template");
 
+    CheckFactories.registerCheck<ReservedNamesCheck>(
+        "libcxx-reserved-names");
     CheckFactories.registerCheck<TemplateMissingInlineCheck>(
         "libcxx-template-missing-inline");
   }
