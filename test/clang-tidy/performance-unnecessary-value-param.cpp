@@ -1,4 +1,4 @@
-// RUN: %check_clang_tidy %s performance-unnecessary-value-param %t -- -fix-errors -- --std=c++11
+// RUN: %check_clang_tidy %s performance-unnecessary-value-param %t
 
 // CHECK-FIXES: #include <utility>
 
@@ -238,13 +238,6 @@ void PositiveConstRefNotMoveAssignable(ExpensiveToCopyType A) {
   B = A;
 }
 
-// Ensure that incomplete types result in an error from the frontend and not a
-// clang-tidy diagnostic about IncompleteType being expensive to copy.
-struct IncompleteType;
-void NegativeForIncompleteType(IncompleteType I) {
-  // CHECK-MESSAGES: [[@LINE-1]]:47: error: variable has incomplete type 'IncompleteType' [clang-diagnostic-error]
-}
-
 // Case where parameter in declaration is already const-qualified but not in
 // implementation. Make sure a second 'const' is not added to the declaration.
 void PositiveConstDeclaration(const ExpensiveToCopyType A);
@@ -259,4 +252,22 @@ void PositiveNonConstDeclaration(ExpensiveToCopyType A);
 void PositiveNonConstDeclaration(const ExpensiveToCopyType A) {
   // CHECK-MESSAGES: [[@LINE-1]]:60: warning: the const qualified parameter 'A'
   // CHECK-FIXES: void PositiveNonConstDeclaration(const ExpensiveToCopyType& A) {
+}
+
+void PositiveOnlyMessageAsReferencedInCompilationUnit(ExpensiveToCopyType A) {
+  // CHECK-MESSAGES: [[@LINE-1]]:75: warning: the parameter 'A' is copied
+  // CHECK-FIXES: void PositiveOnlyMessageAsReferencedInCompilationUnit(ExpensiveToCopyType A) {
+}
+
+void ReferenceFunctionOutsideOfCallExpr() {
+  void (*ptr)(ExpensiveToCopyType) = &PositiveOnlyMessageAsReferencedInCompilationUnit;
+}
+
+void PositiveMessageAndFixAsFunctionIsCalled(ExpensiveToCopyType A) {
+  // CHECK-MESSAGES: [[@LINE-1]]:66: warning: the parameter 'A' is copied
+  // CHECK-FIXES: void PositiveMessageAndFixAsFunctionIsCalled(const ExpensiveToCopyType& A) {
+}
+
+void ReferenceFunctionByCallingIt() {
+  PositiveMessageAndFixAsFunctionIsCalled(ExpensiveToCopyType());
 }
