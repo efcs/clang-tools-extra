@@ -6,6 +6,7 @@ add_clang_library(clangTidyLibcxxModule
   HiddenExternTemplateCheck.cpp
   ReservedNamesCheck.cpp
   TemplateMissingInlineCheck.cpp
+  CommonUtils.cpp
 
   LINK_LIBS
   clangAST

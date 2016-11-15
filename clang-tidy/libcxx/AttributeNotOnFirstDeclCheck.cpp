@@ -56,48 +56,6 @@ AST_MATCHER(FunctionDecl, isRedeclaration) {
 }
 
 
-static bool getMacroAndArgLocations(SourceManager &SM,  ASTContext &Context,
-                                    SourceLocation Loc,
-                                    SourceLocation &ArgLoc,
-                                        SourceLocation &MacroLoc, StringRef &Name) {
-    assert(Loc.isMacroID() && "Only reasonble to call this on macros");
-
-    ArgLoc = Loc;
-
-    // Find the location of the immediate macro expansion.
-    while (true) {
-      std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(ArgLoc);
-      const SrcMgr::SLocEntry *E = &SM.getSLocEntry(LocInfo.first);
-      const SrcMgr::ExpansionInfo &Expansion = E->getExpansion();
-
-      SourceLocation OldArgLoc = ArgLoc;
-      ArgLoc = Expansion.getExpansionLocStart();
-      MacroLoc = Expansion.getExpansionLocEnd();
-      if (!Expansion.isMacroArgExpansion()) {
-         Name =
-            Lexer::getImmediateMacroName(OldArgLoc, SM, Context.getLangOpts());
-
-        return true;
-      }
-
-      MacroLoc = SM.getExpansionRange(ArgLoc).first;
-
-      ArgLoc = Expansion.getSpellingLoc().getLocWithOffset(LocInfo.second);
-      if (ArgLoc.isFileID())
-        return true;
-
-      // If spelling location resides in the same FileID as macro expansion
-      // location, it means there is no inner macro.
-      FileID MacroFID = SM.getFileID(MacroLoc);
-      if (SM.isInFileID(ArgLoc, MacroFID)) {
-        // Don't transform this case. If the characters that caused the
-        // null-conversion come from within a macro, they can't be changed.
-        return false;
-      }
-    }
-
-    llvm_unreachable("getMacroAndArgLocations");
-}
 
 
 void AttributeNotOnFirstDeclCheck::registerMatchers(MatchFinder *Finder) {
