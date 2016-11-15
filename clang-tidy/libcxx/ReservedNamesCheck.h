@@ -26,6 +26,18 @@ public:
       : ClangTidyCheck(Name, Context) {}
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+
+  void addReplacableDecl(const NamedDecl *D) { ReplacableDecls.insert(D); }
+
+  bool hasReplacableDecl(const Decl *D) const {
+    const auto *ND = dyn_cast<NamedDecl>(D);
+    if (!ND)
+      return false;
+    return ReplacableDecls.count(ND) != 0;
+  }
+
+private:
+  llvm::DenseSet<const NamedDecl *> ReplacableDecls;
 };
 
 } // namespace libcxx

@@ -43,7 +43,8 @@ AST_MATCHER(NamedDecl, isFromStdNamespace) {
   D = D->getEnclosingNamespaceContext();
   if (!D)
     return false;
-  while (D->isInlineNamespace())
+  while (D->isInlineNamespace() ||
+         (D->getParent() && D->getParent()->isNamespace()))
     D = D->getParent();
   if (!D->isNamespace() || !D->getParent()->isTranslationUnit())
     return false;
@@ -51,7 +52,7 @@ AST_MATCHER(NamedDecl, isFromStdNamespace) {
   return (Info && Info->isStr("std"));
 }
 
-inline bool hasReservedName(NamedDecl *D) {
+inline bool hasReservedName(const NamedDecl *D) {
   const IdentifierInfo *Info = D->getIdentifier();
   if (!Info || Info->getLength() == 0)
     return true;
@@ -63,7 +64,7 @@ inline bool hasReservedName(NamedDecl *D) {
          (Name[1] == '_' || (Name[1] >= 'A' && Name[1] <= 'Z'));
 }
 
-inline bool hasNonReservedName(NamedDecl *D) {
+inline bool hasNonReservedName(const NamedDecl *D) {
   const IdentifierInfo *Info = D->getIdentifier();
   if (!Info || Info->getLength() == 0)
     return false;
@@ -75,25 +76,57 @@ inline bool hasNonReservedName(NamedDecl *D) {
          !(Name[1] == '_' && (Name[1] >= 'A' && Name[1] <= 'Z'));
 }
 
-inline bool hasGoodReservedName(NamedDecl *D) {
+inline bool isReservedName(StringRef Name) {
+  if (Name.size() < 2)
+    return false;
+  return Name[0] == '_' &&
+         (Name[1] == '_' || (Name[1] >= 'A' && Name[1] <= 'Z'));
+}
+
+inline bool hasGoodReservedName(const NamedDecl *D) {
   const IdentifierInfo *Info = D->getIdentifier();
   if (!Info || Info->getLength() == 0)
     return true;
   // don't allow identifiers fewer than 3 characters.
   if (Info->getLength() < 3)
     return false;
-  const char *Name = Info->getNameStart();
-  return Name[0] == '_' &&
-         (Name[1] == '_' || (Name[1] >= 'A' && Name[1] <= 'Z'));
+  return isReservedName(Info->getNameStart());
+}
+
+inline bool isReservedOrAllowableNonReservedName(const NamedDecl *ND) {
+  assert(ND);
+  const IdentifierInfo *Info = ND->getIdentifier();
+  if (!Info || Info->getLength() == 0)
+    return true;
+  // don't allow identifiers fewer than 3 characters.
+  if (Info->getLength() < 3)
+    return false;
+  StringRef Name = Info->getNameStart();
+  if (isReservedName(Name))
+    return true;
+  if (Name == "type" && isa<TypedefNameDecl>(ND))
+    return true;
+  const auto *VD = dyn_cast<VarDecl>(ND);
+  if (Name == "value" && VD && VD->isStaticDataMember())
+    return true;
+  return false;
 }
 
 AST_MATCHER(NamedDecl, isReservedOrUnnamed) {
   return hasGoodReservedName(&Node);
 }
 
+AST_MATCHER(DeclRefExpr, declRefIsReservedOrUnnamed) {
+  const auto *VD = Node.getDecl();
+  assert(VD);
+  return hasGoodReservedName(VD);
+}
+
 bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
                              SourceLocation Loc, SourceLocation &ArgLoc,
                              SourceLocation &MacroLoc, StringRef &Name);
+
+bool isInLibcxxHeaderFile(const SourceManager &SM, const Decl *D);
 
 } // namespace libcxx
 } // namespace tidy
