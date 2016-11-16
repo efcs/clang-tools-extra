@@ -60,14 +60,15 @@ bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
 
 bool isInLibcxxHeaderFile(const clang::SourceManager &SM,
                           const clang::Decl *D) {
-  auto ExpansionLoc = SM.getExpansionLoc(D->getLocStart());
+  auto ExpansionLoc = SM.getFileLoc(D->getLocation()); //SM.getExpansionLoc(D->getLocStart());
+  assert(D->getLocation() == SM.getExpansionLoc(D->getLocation()));
   if (ExpansionLoc.isInvalid())
     return false;
   const auto *FE = SM.getFileEntryForID(SM.getFileID(ExpansionLoc));
   if (!FE)
     return false;
   StringRef Name = FE->getName();
-  if (Name.empty() || Name.endswith_lower(".cpp"))
+  if (Name.endswith_lower(".cpp"))
     return false;
   return true;
 }

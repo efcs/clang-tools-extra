@@ -40,7 +40,7 @@ namespace libcxx {
 /// matches "using std::vector" and "using ns::list".
 
 inline bool IsFromStdNamespace(const Decl *Dec) {
-  const DeclContext *D = Dec->getDeclContext();
+  const DeclContext *D = Dec->getCanonicalDecl()->getDeclContext();
   D = D->getEnclosingNamespaceContext();
   if (!D)
     return false;

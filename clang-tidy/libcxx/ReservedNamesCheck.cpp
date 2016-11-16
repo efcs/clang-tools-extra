@@ -120,26 +120,31 @@ static std::string getNewName(StringRef Name, bool IsField = false) {
   const char *Suffix = (IsField && !HasTrailingUnderscore) ? "_" : "";
   auto isLower = [](char ch) { return ch >= 'a' && ch <= 'z'; };
   auto isUpper = [](char ch) { return ch >= 'A' && ch <= 'Z'; };
+  std::string NewName;
   if (HasLeadingUnderscore) {
     if (Len == 1)
       return "";
     if (Name[1] == '_')
       return "";
     if (isUpper(Name[1])) {
-      return "";
+      if (Len > 2)
+         return ""; // TODO
+      NewName += Name;
+      NewName += "p";
+      assert(Suffix == "");
     }
     else if (isLower(Name[1])) {
-      return "";
+      NewName += "_";
+      NewName += Name;
+      NewName += Suffix;
     } else {
       return "";
     }
   } else {
-    std::string NewName;
     if (isLower(Name[0])) {
       NewName = "__";
       NewName += Name;
       NewName += Suffix;
-      return NewName;
     } else if (isUpper(Name[0]) && Len >= 2) {
       NewName = "_";
       NewName += Name;;
@@ -155,7 +160,7 @@ static std::string getNewName(StringRef Name, bool IsField = false) {
       return "_Tp";
     }
   }
-  return "";
+  return NewName;
 }
 
 static std::string getNewName(const NamedDecl *ND) {
@@ -186,7 +191,6 @@ extractNamedDecl(const TypeLoc *Loc) {
   if (Decl)
     return {Decl, NameLoc};
 
-#if 1
   if (const auto &Ref = Loc->getAs<TemplateSpecializationTypeLoc>()) {
     const auto *Decl = Ref.getTypePtr()->getTemplateName().getAsTemplateDecl();
     assert(Decl);
@@ -201,20 +205,6 @@ extractNamedDecl(const TypeLoc *Loc) {
     if (const auto *Decl = Ref.getTypePtr()->getAsTagDecl())
       return {cast<NamedDecl>(Decl), Ref.getLocStart()};
   }
-#endif
-#if 0
-  if (const auto &Ref = Loc->getAs<DependentTemplateSpecializationTypeLoc>()) {
-    auto *NNS = Ref.getQualifierLoc().getNestedNameSpecifier();
-    if (NNS) {
-      // NNS->dump();
-    }
-  }
-  if (const auto &Ref = Loc->getAs<ElaboratedTypeLoc>()) {
-
-    auto NewLoc = Ref.getNamedTypeLoc();
-    return extractNamedDecl(&NewLoc);
-  }
-#endif
   return {nullptr, NameLoc};
 }
 
@@ -293,7 +283,7 @@ static bool canReplaceDecl(const Decl *D) {
   assert(D);
   if (isa<ParmVarDecl>(D))
     return true;
-  if (D->getAccess() == AS_private && (isa<VarDecl>(D) || isa<FieldDecl>(D)))
+  if (D->getAccess() == AS_private && (isa<VarDecl>(D) || isa<FieldDecl>(D) || isa<CXXMethodDecl>(D)))
     return true;
   if (const auto *VD = dyn_cast<VarDecl>(D))
     return VD->isLocalVarDeclOrParm();
@@ -344,9 +334,6 @@ AST_MATCHER(TypeLoc, typeIsReservedOrUnnamed) {
   auto Pair = extractNamedDecl(&UL);
   if (!Pair.first)
     return true;
-  //auto Pair2 = extractDependentName(&UL);
-
-  //assert(Pair2.first.find(':') == std::string::npos);
   return IsAllowableReservedName(Pair.first);
 }
 
@@ -368,7 +355,7 @@ AST_MATCHER(TypeLoc, typeLocIsValid) {
   if (isa<CXXConstructorDecl>(ND)) {
     assert(false);
   }
-  if (!IsFromStdNamespace(ND))
+  if (!IsFromStdNamespace(ND->getCanonicalDecl()))
     return false;
   if (isa<CXXRecordDecl>(ND))
     return false;
@@ -447,8 +434,7 @@ void ReservedNamesCheck::registerMatchers(MatchFinder *Finder) {
                      this);
   Finder->addMatcher(memberExpr(
                     exprShouldUseReservedName(),
-                     unless(hasAncestor(cxxConstructorDecl(isDefaultedCtor())))
-
+                     unless(hasParent(cxxConstructorDecl(isDefaultedCtor())))
                      ).bind("memberRef"),
                      this);
   Finder->addMatcher(
@@ -534,10 +520,30 @@ void ReservedNamesCheck::checkDependentExpr(const Expr *E) {
   }
 }
 
+static const Decl *getSourceDecl(const Decl *D) {
+  if (const auto *Func = dyn_cast<FunctionDecl>(D)) {
+    // If this function was instantiated from a member function of a
+    // class template, check whether that member function was defined out-of-line.
+    if (FunctionDecl *FD = Func->getInstantiatedFromMemberFunction()) {
+      FD = FD->getCanonicalDecl();
+      if (!FD->isOutOfLine())
+        return FD;
+    }
+
+    // If this function was instantiated from a function template,
+    // check whether that function template was defined out-of-line.
+    if (FunctionTemplateDecl *FunTmpl = Func->getPrimaryTemplate()) {
+      return FunTmpl->getTemplatedDecl()->getCanonicalDecl();
+    }
+  }
+  return D->getCanonicalDecl();
+}
+
 void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
   SourceMgr = Result.SourceManager;
   // FIXME: Add callback implementation.
   const NamedDecl *ND = Result.Nodes.getNodeAs<NamedDecl>("decl");
+  const Decl *SourceDecl = nullptr;
   const bool MatchesDecl = ND != nullptr;
   const DeclRefExpr *DRE = Result.Nodes.getNodeAs<DeclRefExpr>("declRef");
   const TypeLoc *QualTL = Result.Nodes.getNodeAs<TypeLoc>("typeLoc");
@@ -552,6 +558,7 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
   const MemberExpr *ME = Result.Nodes.getNodeAs<MemberExpr>("memberRef");
   const Expr *TPS = Result.Nodes.getNodeAs<Expr>("subTempParm");
   const Expr *DepExpr = Result.Nodes.getNodeAs<Expr>("depMemberRef");
+  const RecordDecl *OwningRecord = nullptr;
   if (DepExpr) {
     DependentExprs.push_back(cast<Expr>(DepExpr));
     return;
@@ -563,7 +570,6 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
     Loc = DRE->getLocation();
     Range = DRE->getNameInfo().getSourceRange();
     ND = DRE->getDecl();
-
   } else if (TL) {
     auto Pair = extractNamedDecl(TL);
     ND = Pair.first;
@@ -586,15 +592,10 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
 
   } else if (ME) {
     ND = ME->getMemberDecl();
-
     Loc = ME->getMemberLoc();
-    if (Loc == ME->getLocStart()) {
-
-    }
     assert(Loc.isValid());
-    Range = SourceRange(Loc, ME->getLocEnd());
+    Range = ME->getMemberNameInfo().getSourceRange();
     assert(Range.isValid());
-
   } else if (TPS) {
     if (const auto *TS = dyn_cast<SubstNonTypeTemplateParmExpr>(TPS)) {
       ND = cast<NamedDecl>(TS->getParameter());
@@ -628,10 +629,18 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
 
   }
   assert(ND);
+  if (!SourceDecl) {
+    SourceDecl = getSourceDecl(ND);
+  }
+  assert(SourceDecl);
+  auto IDName = getIdentString(ND);
+  if (IDName == "init" || IDName == "use_facet" || IDName == "has_facet"
+          || IDName == "allocator_type" || IDName == "size_type")
+    return; // FIXME
   auto &SM = *Result.SourceManager;
   auto &Context = *Result.Context;
 
-  if (!isInLibcxxHeaderFile(SM, ND))
+  if (!isInLibcxxHeaderFile(SM, SourceDecl))
     return;
   if (IsAllowableReservedName(ND)) {
     llvm::outs() << "name is reserved: '" << getIdentString(ND) << "'\n";

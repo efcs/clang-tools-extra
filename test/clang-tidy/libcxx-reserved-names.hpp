@@ -39,12 +39,13 @@ private:
   // CHECK-FIXES: static int __xx;
   int yy;
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: use of non-reserved name 'yy'
-  // CHECK-FIXES: int __yy;
+  // CHECK-FIXES: int __yy_;
   void baz() { int y = yy; }
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: use of non-reserved name 'baz'
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: use of non-reserved name 'y'
-  // CHECK-FIXES: void baz() { int __y = __yy; }
-
+  // CHECK-FIXES: void __baz() { int __y = __yy_; }
+  void __bar_baz() { baz(); }
+  // CHECK-FIXES: {{^}}  void __bar_baz() { __baz(); }{{$}}
   static int value;
   typedef int type;
 };
