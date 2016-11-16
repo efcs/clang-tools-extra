@@ -55,9 +55,11 @@ public:
   typedef llvm::DenseMap<std::string, ReplacedNamesSet> ReplacedMembersMap;
 
 private:
+  SourceManager *SourceMgr;
   NamingCheckFailureMap Failures;
   std::vector<const Expr *> DependentExprs;
   ReplacedMembersMap TransformedMembers;
+  llvm::DenseSet<SourceLocation> TransformedLocs;
 };
 
 } // namespace libcxx

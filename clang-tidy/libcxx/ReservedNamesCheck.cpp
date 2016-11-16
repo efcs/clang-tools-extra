@@ -73,6 +73,31 @@ template <> struct DenseMapInfo<std::string> {
     return LHS == RHS;
   }
 };
+using clang::SourceLocation;
+template <> struct DenseMapInfo<clang::SourceLocation> {
+  static inline SourceLocation getEmptyKey() {
+    return clang::SourceLocation::getFromRawEncoding(static_cast<unsigned>(-1));
+  }
+
+  static inline SourceLocation getTombstoneKey() {
+    return clang::SourceLocation::getFromRawEncoding(static_cast<unsigned>(-2));
+  }
+
+  static unsigned getHashValue(SourceLocation Val) {
+    assert(Val != getEmptyKey() && "Cannot hash the empty key!");
+    assert(Val != getTombstoneKey() && "Cannot hash the tombstone key!");
+
+    return Val.getRawEncoding();
+  }
+
+  static bool isEqual(SourceLocation LHS, SourceLocation RHS) {
+    if (RHS == getEmptyKey())
+      return LHS == getEmptyKey();
+    if (RHS == getTombstoneKey())
+      return LHS == getTombstoneKey();
+    return LHS == RHS;
+  }
+};
 } // namespace llvm
 #endif
 namespace clang {
@@ -85,12 +110,14 @@ static StringRef getIdentString(const NamedDecl *ND) {
   return ND->getIdentifier()->getNameStart();
 }
 
-static std::string getNewName(StringRef Name) {
+static std::string getNewName(StringRef Name, bool IsField = false) {
   const auto Len = Name.size();
   if (Len == 0)
     return "";
 
   bool HasLeadingUnderscore = Name[0] == '_';
+  bool HasTrailingUnderscore = Name.back() == '_';
+  const char *Suffix = (IsField && !HasTrailingUnderscore) ? "_" : "";
   auto isLower = [](char ch) { return ch >= 'a' && ch <= 'z'; };
   auto isUpper = [](char ch) { return ch >= 'A' && ch <= 'Z'; };
   if (HasLeadingUnderscore) {
@@ -107,40 +134,34 @@ static std::string getNewName(StringRef Name) {
       return "";
     }
   } else {
+    std::string NewName;
     if (isLower(Name[0])) {
-      std::string NewName = "__";
+      NewName = "__";
       NewName += Name;
+      NewName += Suffix;
       return NewName;
     } else if (isUpper(Name[0]) && Len >= 2) {
-      std::string NewName = "_";
-      NewName += Name;
-      return NewName;
+      NewName = "_";
+      NewName += Name;;
+      // FIXME allows better diagnostics here
+      assert(Suffix == StringRef(""));
     } else if (isUpper(Name[0]) && Len == 1) {
-      std::string NewName = "_";
+      NewName = "_";
       NewName += Name;
       NewName += "p";
-      return NewName;
+      assert(Suffix == StringRef(""));
     } else if (Name == "T") {
+      assert(Suffix == StringRef(""));
       return "_Tp";
     }
   }
   return "";
 }
 
-static std::string getNewName(const IdentifierInfo *Info) {
-  assert(Info && Info->getLength() != 0);
-  StringRef Name(Info->getNameStart());
-  assert(Name.size() == Info->getLength());
-  return getNewName(Name);
+static std::string getNewName(const NamedDecl *ND) {
+  bool AddSuffix = isa<FieldDecl>(ND);
+  return getNewName(getIdentString(ND), AddSuffix);
 }
-
-template <class Base, class Derived, class TypeClass, class LocalData>
-ConcreteTypeLoc<Base, Derived, TypeClass, LocalData>
-getBaseTypeMF(ConcreteTypeLoc<Base, Derived, TypeClass, LocalData> &);
-
-template <class Base, class Derived, class TypeClass, class LocalData>
-Derived
-getDerivedTypeMF(ConcreteTypeLoc<Base, Derived, TypeClass, LocalData> &);
 
 static std::pair<const NamedDecl *, SourceLocation>
 extractNamedDecl(const TypeLoc *Loc) {
@@ -338,6 +359,8 @@ AST_MATCHER(TypeLoc, typeLocIsValid) {
     return false;
   if (IsAllowableReservedName(ND))
     return false;
+  if (!declShouldUseReservedName(ND))
+    return false;
   if (const auto &Ref = Node.getAs<TagTypeLoc>())
     return false;
   if (const auto &Ref = Node.getAs<InjectedClassNameTypeLoc>())
@@ -349,6 +372,8 @@ AST_MATCHER(TypeLoc, typeLocIsValid) {
     return false;
   if (isa<CXXRecordDecl>(ND))
     return false;
+  if (isa<UsingDecl>(ND))
+    assert(false);
   return true;
 }
 
@@ -360,8 +385,6 @@ AST_MATCHER(Expr, isTemplateArgumentSubstitution) {
 AST_MATCHER(Expr, isInterestingCXXDependentScopeMemberExpr) {
   if (auto *ME = dyn_cast<CXXDependentScopeMemberExpr>(&Node)) {
     auto Name = ME->getMemberNameInfo().getAsString();
-    if (Name == "first" || Name == "second" || Name == "value")
-      return false;
     if (IsAllowableReservedName(Name))
       return false;
     if (ME->isImplicitAccess())
@@ -375,6 +398,7 @@ AST_MATCHER(Expr, isInterestingCXXDependentScopeMemberExpr) {
 }
 
 static void addUsage(ReservedNamesCheck::NamingCheckFailureMap &Failures,
+                     llvm::DenseSet<SourceLocation> &TransformedLocs,
                      const NamedDecl *ND, SourceRange Range,
                      SourceManager &SourceMgr, bool ShouldFix = false,
                      bool ShouldExist = false) {
@@ -388,7 +412,7 @@ static void addUsage(ReservedNamesCheck::NamingCheckFailureMap &Failures,
   auto It = Failures.find(ID);
   if (It == Failures.end()) {
     assert(!ShouldExist);
-    auto NewName = getNewName(ND->getIdentifier());
+    auto NewName = getNewName(ND);
     ShouldFix = ShouldFix && NewName != "";
     ReservedNamesCheck::NamingCheckFailure Fail(NewName, ShouldFix);
     auto ItPair = Failures.try_emplace(ID, Fail);
@@ -398,6 +422,7 @@ static void addUsage(ReservedNamesCheck::NamingCheckFailureMap &Failures,
     // assert(ShouldExist);
   }
   It->second.addNewRange(SourceRange(FixLocation));
+  TransformedLocs.insert(FixLocation);
 }
 
 bool ReservedNamesCheck::hasFailedDecl(const NamedDecl *ND) const {
@@ -441,16 +466,17 @@ void ReservedNamesCheck::registerMatchers(MatchFinder *Finder) {
                          unless(isAllowableReservedName()))))
           .bind("memInit"),
       this);
-#if 0
   Finder->addMatcher(
       expr(isInterestingCXXDependentScopeMemberExpr()).bind("depMemberRef"),
       this);
-#endif
 }
 
 void ReservedNamesCheck::checkDependentExpr(const Expr *E) {
   if (auto *DME = dyn_cast<CXXDependentScopeMemberExpr>(E)) {
     auto Name = DME->getMemberNameInfo().getAsString();
+    SourceRange FixLocation = DME->getMemberNameInfo().getSourceRange();
+    if (TransformedLocs.count(FixLocation.getBegin()) != 0)
+      return;
     auto FIt = TransformedMembers.find(Name);
     if (FIt == TransformedMembers.end())
       return;
@@ -460,37 +486,56 @@ void ReservedNamesCheck::checkDependentExpr(const Expr *E) {
       D = dyn_cast_or_null<DeclaratorDecl>(Base->getDecl());
       assert(!Base->getDecl() || D);
     }
-    if (!Base || !D || !D->getTypeSourceInfo()->getTypeLoc()) {
+    if (!Base || !D) {
       diag(DME->getLocStart(), "possibly renamed member '%0'") << Name;
       return;
     }
+
+    assert(!FixLocation.isInvalid());
+
     auto UnqualTL = D->getTypeSourceInfo()->getTypeLoc();
     const TypeLoc *TL = &UnqualTL;
     auto Pair = extractDependentName(TL);
     if (Pair.first.empty()) {
-      diag(DME->getLocStart(), "possibly [unnamed] renamed member '%0'")
-          << Name;
-      return;
+      const std::pair<std::string, NamingCheckId> *FoundRep = nullptr;
+
+      auto &Vec = FIt->second;
+      assert(!Vec.empty());
+      FoundRep = &Vec.front();
+      const std::string &FromRDName = FoundRep->first;
+      for (const auto &KV : Vec) {
+        if (KV.second != FoundRep->second) {
+          diag(DME->getLocStart(), "ambigious something... '%0'") << Name;
+          return;
+        }
+      }
+      auto ExistingFailure = Failures.find(FoundRep->second);
+      assert(ExistingFailure != Failures.end());
+      // FIXME Only attempt to fix names with a trailing underscore.
+      if (ExistingFailure->second.ShouldFix && Name.back() == '_') {
+        ExistingFailure->second.addNewRange(FixLocation);
+        TransformedLocs.insert(FixLocation.getBegin());
+        diag(FixLocation.getBegin(),
+             "attempting fix on dependent member name '%0' which was replaced in the class template '%1'",
+             DiagnosticIDs::Remark)
+            << Name << FromRDName;
+        return;
+      }
     }
     auto RDName = Pair.first;
     assert(RDName != "tuple");
-    const std::pair<std::string, NamingCheckId> *FoundRep = nullptr;
-    for (const auto &KV : FIt->second) {
-      if (KV.first == RDName) {
-        FoundRep = &KV;
-        break;
-      }
-    }
-    diag(E->getExprLoc(), "possibly renamed member '%0'") << Name;
-    if (FoundRep) {
-      diag(FoundRep->second.first, "member declared here");
-    }
+    diag(FixLocation.getBegin(), "possibly dependent renamed member '%0'")
+        << Name;
+    // if (FoundRep) {
+    //  diag(FoundRep->second.first, "member declared here");
+    // }
   } else {
     assert(false && "unhandled");
   }
 }
 
 void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
+  SourceMgr = Result.SourceManager;
   // FIXME: Add callback implementation.
   const NamedDecl *ND = Result.Nodes.getNodeAs<NamedDecl>("decl");
   const bool MatchesDecl = ND != nullptr;
@@ -594,14 +639,16 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
   }
   assert(IsFromStdNamespace(ND));
   if (MatchesDecl) {
-    addUsage(Failures, ND, Range, SM, canReplaceDecl(ND), false);
+    addUsage(Failures, TransformedLocs, ND, Range, SM, canReplaceDecl(ND),
+             false);
   } else {
     if (!hasFailedDecl(ND)) {
       assert(ND->getSourceRange().isValid());
-      addUsage(Failures, ND, Range, SM, canReplaceDecl(ND), false);
+      addUsage(Failures, TransformedLocs, ND, Range, SM, canReplaceDecl(ND),
+               false);
     } else {
 
-      addUsage(Failures, ND, Range, SM, false, true);
+      addUsage(Failures, TransformedLocs, ND, Range, SM, false, true);
     }
   }
   if (auto *FD = dyn_cast<FieldDecl>(ND)) {
@@ -618,9 +665,8 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
 }
 
 void ReservedNamesCheck::onEndOfTranslationUnit() {
-  for (auto const &DepExprs : DependentExprs) {
+  for (auto const &DepExprs : DependentExprs)
     checkDependentExpr(DepExprs);
-  }
   for (auto const &KV : Failures) {
     auto Loc = KV.first.first; // KV.first->getLocation();
     auto Diag = diag(Loc, "use of non-reserved name '%0'") << KV.first.second;
