@@ -180,6 +180,8 @@ extractNamedDecl(const TypeLoc *Loc) {
     if (const auto *Decl = Ref.getTypePtr()->getAsTagDecl())
       return {cast<NamedDecl>(Decl), Ref.getLocStart()};
   }
+#endif
+#if 0
   if (const auto &Ref = Loc->getAs<DependentTemplateSpecializationTypeLoc>()) {
     auto *NNS = Ref.getQualifierLoc().getNestedNameSpecifier();
     if (NNS) {
@@ -217,7 +219,7 @@ extractDependentName(const TypeLoc *Loc) {
   if (Decl)
     goto finish_extract;
 
-#if 1
+#if 0
   if (const auto &Ref = Loc->getAs<TemplateSpecializationTypeLoc>()) {
     const auto *ODecl = Ref.getTypePtr()->getTemplateName().getAsTemplateDecl();
     Decl = cast<NamedDecl>(ODecl);
@@ -301,13 +303,30 @@ AST_MATCHER(Expr, exprShouldUseReservedName) {
          !IsAllowableReservedName(ND);
 }
 
+AST_MATCHER(CXXCtorInitializer, isRealInit) {
+  return Node.isWritten() && Node.isMemberInitializer() &&
+          !Node.isInClassMemberInitializer();
+}
+AST_MATCHER(CXXConstructorDecl, isDefaultedCtor) {
+  if (Node.isImplicit() || Node.isDefaulted()) {
+    return true;
+  }
+  if (Node.isTemplateInstantiation()) {
+    auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(Node.getTemplateInstantiationPattern());
+    assert(Ctor);
+    return Ctor->isImplicit() || Ctor->isDefaulted();
+  }
+  return false;
+}
 AST_MATCHER(TypeLoc, typeIsReservedOrUnnamed) {
   UnqualTypeLoc UL = Node.getUnqualifiedLoc();
   auto Pair = extractNamedDecl(&UL);
-  auto Pair2 = extractDependentName(&UL);
+  if (!Pair.first)
+    return true;
+  //auto Pair2 = extractDependentName(&UL);
 
-  assert(Pair2.first.find(':') == std::string::npos);
-  return IsAllowableReservedName(Pair2.first);
+  //assert(Pair2.first.find(':') == std::string::npos);
+  return IsAllowableReservedName(Pair.first);
 }
 
 AST_MATCHER(TypeLoc, typeLocIsValid) {
@@ -323,7 +342,9 @@ AST_MATCHER(TypeLoc, typeLocIsValid) {
     return false;
   if (const auto &Ref = Node.getAs<InjectedClassNameTypeLoc>())
     return false;
-
+  if (isa<CXXConstructorDecl>(ND)) {
+    assert(false);
+  }
   if (!IsFromStdNamespace(ND))
     return false;
   if (isa<CXXRecordDecl>(ND))
@@ -395,10 +416,15 @@ void ReservedNamesCheck::registerMatchers(MatchFinder *Finder) {
                          .bind("decl"),
                      this);
   Finder->addMatcher(declRefExpr(exprShouldUseReservedName(),
+                                 unless(hasAncestor(cxxConstructorDecl(isDefaultedCtor()))),
                                  unless(declRefIsAllowableReservedName()))
                          .bind("declRef"),
                      this);
-  Finder->addMatcher(memberExpr(exprShouldUseReservedName()).bind("memberRef"),
+  Finder->addMatcher(memberExpr(
+                    exprShouldUseReservedName(),
+                     unless(hasAncestor(cxxConstructorDecl(isDefaultedCtor())))
+
+                     ).bind("memberRef"),
                      this);
   Finder->addMatcher(
       typeLoc(typeLocIsValid(), unless(typeIsReservedOrUnnamed()))
@@ -410,14 +436,16 @@ void ReservedNamesCheck::registerMatchers(MatchFinder *Finder) {
       this);
   Finder->addMatcher(
       cxxCtorInitializer(
-          isWritten(),
+          isRealInit(),
           forField(allOf(isFromStdNamespace(), shouldUseReservedName(),
                          unless(isAllowableReservedName()))))
           .bind("memInit"),
       this);
+#if 0
   Finder->addMatcher(
       expr(isInterestingCXXDependentScopeMemberExpr()).bind("depMemberRef"),
       this);
+#endif
 }
 
 void ReservedNamesCheck::checkDependentExpr(const Expr *E) {
@@ -481,7 +509,6 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
   const Expr *DepExpr = Result.Nodes.getNodeAs<Expr>("depMemberRef");
   if (DepExpr) {
     DependentExprs.push_back(cast<Expr>(DepExpr));
-    checkDependentExpr(DepExpr);
     return;
   }
   SourceLocation Loc;
@@ -514,8 +541,11 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
 
   } else if (ME) {
     ND = ME->getMemberDecl();
-    assert(ND);
+
     Loc = ME->getMemberLoc();
+    if (Loc == ME->getLocStart()) {
+
+    }
     assert(Loc.isValid());
     Range = SourceRange(Loc, ME->getLocEnd());
     assert(Range.isValid());
@@ -536,16 +566,21 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
     }
     assert(Loc.isValid());
     assert(Range.isValid());
+
   } else if (CIT) {
+    assert(CIT->isWritten() && CIT->isMemberInitializer()
+            && !CIT->isInClassMemberInitializer());
     ND = CIT->getMember();
     Loc = CIT->getMemberLocation();
     Range = SourceRange(Loc);
+
   } else {
     assert(ND);
     assert(MatchesDecl);
     Loc = ND->getLocation();
     Range = DeclarationNameInfo(ND->getDeclName(), ND->getLocation())
                 .getSourceRange();
+
   }
   assert(ND);
   auto &SM = *Result.SourceManager;
@@ -565,6 +600,7 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
       assert(ND->getSourceRange().isValid());
       addUsage(Failures, ND, Range, SM, canReplaceDecl(ND), false);
     } else {
+
       addUsage(Failures, ND, Range, SM, false, true);
     }
   }

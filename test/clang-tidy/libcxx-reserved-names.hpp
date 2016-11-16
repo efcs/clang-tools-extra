@@ -3,10 +3,7 @@ namespace std {
 // FIXME: Add something that triggers the check here.
 void f();
 
-void bar(int i) {
-  int x;
-  static int y;
-}
+void bar(int i) { int x; static int y; }
 // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: use of non-reserved name 'i'
 // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: use of non-reserved name 'x'
 // CHECK-MESSAGES: :[[@LINE-3]]:{{.*}}: warning: use of non-reserved name 'y'
@@ -19,11 +16,7 @@ struct T {
   static int x;
   int y;
   template <class T, class... U, int N, int... NPack>
-  void bar(int i, T __t, U...) {
-    T y = N;
-    static int zz;
-    __eat(__t, NPack..., __t);
-  }
+  void bar(int i, T __t, U...) { T y = N; static int zz; __eat(__t, NPack..., __t); }
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: use of non-reserved name 'T'
   // CHECK-MESSAGES: :[[@LINE-3]]:{{.*}}: warning: use of non-reserved name 'U'
   // CHECK-MESSAGES: :[[@LINE-4]]:{{.*}}: warning: use of non-reserved name 'N'
@@ -38,8 +31,8 @@ struct T {
   template <class... U>
   void test_templ() { test_templ2<U...>(); }
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: use of non-reserved name 'U'
-  // CHECK-FIXES: template <class ..._Up>
-  // CHECK-FIXES: void test_templ() { test_templ2<_Up...>(); }
+  // CHECK-FIXES: template <class... _Up>
+  // CHECK-FIXES-NEXT: void test_templ() { test_templ2<_Up...>(); }
 private:
   static int xx;
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: use of non-reserved name 'xx'
