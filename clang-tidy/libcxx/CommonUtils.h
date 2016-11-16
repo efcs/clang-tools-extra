@@ -38,8 +38,9 @@ namespace libcxx {
 ///
 /// usingDecl(hasAnyUsingShadowDecl(hasTargetDecl(isFromStdNamespace())))
 /// matches "using std::vector" and "using ns::list".
-AST_MATCHER(NamedDecl, isFromStdNamespace) {
-  const DeclContext *D = Node.getDeclContext();
+
+inline bool IsFromStdNamespace(const Decl *Dec) {
+  const DeclContext *D = Dec->getDeclContext();
   D = D->getEnclosingNamespaceContext();
   if (!D)
     return false;
@@ -51,6 +52,7 @@ AST_MATCHER(NamedDecl, isFromStdNamespace) {
   const IdentifierInfo *Info = cast<NamespaceDecl>(D)->getIdentifier();
   return (Info && Info->isStr("std"));
 }
+AST_MATCHER(NamedDecl, isFromStdNamespace) { return IsFromStdNamespace(&Node); }
 
 inline bool hasReservedName(const NamedDecl *D) {
   const IdentifierInfo *Info = D->getIdentifier();
@@ -93,33 +95,38 @@ inline bool hasGoodReservedName(const NamedDecl *D) {
   return isReservedName(Info->getNameStart());
 }
 
-inline bool isReservedOrAllowableNonReservedName(const NamedDecl *ND) {
-  assert(ND);
-  const IdentifierInfo *Info = ND->getIdentifier();
-  if (!Info || Info->getLength() == 0)
+inline bool IsAllowableReservedName(StringRef Name,
+                                    const NamedDecl *ND = nullptr) {
+  if (Name.size() == 0)
     return true;
-  // don't allow identifiers fewer than 3 characters.
-  if (Info->getLength() < 3)
+  if (Name.size() < 3)
     return false;
-  StringRef Name = Info->getNameStart();
   if (isReservedName(Name))
     return true;
-  if (Name == "type" && isa<TypedefNameDecl>(ND))
+  if (Name == "type" && ND && isa<TypedefNameDecl>(ND))
     return true;
-  const auto *VD = dyn_cast<VarDecl>(ND);
+  const auto *VD = dyn_cast_or_null<VarDecl>(ND);
   if (Name == "value" && VD && VD->isStaticDataMember())
     return true;
   return false;
 }
 
-AST_MATCHER(NamedDecl, isReservedOrUnnamed) {
-  return hasGoodReservedName(&Node);
+inline bool IsAllowableReservedName(const NamedDecl *ND) {
+  assert(ND);
+  const IdentifierInfo *Info = ND->getIdentifier();
+  if (!Info)
+    return true;
+  return IsAllowableReservedName(Info->getNameStart(), ND);
 }
 
-AST_MATCHER(DeclRefExpr, declRefIsReservedOrUnnamed) {
+AST_MATCHER(NamedDecl, isAllowableReservedName) {
+  return IsAllowableReservedName(&Node);
+}
+
+AST_MATCHER(DeclRefExpr, declRefIsAllowableReservedName) {
   const auto *VD = Node.getDecl();
   assert(VD);
-  return hasGoodReservedName(VD);
+  return IsAllowableReservedName(VD);
 }
 
 bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,

@@ -11,6 +11,7 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_LIBCXX_RESERVED_NAMES_H
 
 #include "../ClangTidy.h"
+#include <vector>
 
 namespace clang {
 namespace tidy {
@@ -22,22 +23,41 @@ namespace libcxx {
 /// http://clang.llvm.org/extra/clang-tidy/checks/libcxx-reserved-names.html
 class ReservedNamesCheck : public ClangTidyCheck {
 public:
-  ReservedNamesCheck(StringRef Name, ClangTidyContext *Context)
-      : ClangTidyCheck(Name, Context) {}
+  ReservedNamesCheck(StringRef Name, ClangTidyContext *Context);
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+  void onEndOfTranslationUnit() override;
 
-  void addReplacableDecl(const NamedDecl *D) { ReplacableDecls.insert(D); }
+  void checkDependentExpr(const Expr *E);
+  bool hasFailedDecl(const NamedDecl *ND) const;
 
-  bool hasReplacableDecl(const Decl *D) const {
-    const auto *ND = dyn_cast<NamedDecl>(D);
-    if (!ND)
-      return false;
-    return ReplacableDecls.count(ND) != 0;
-  }
+  struct NamingCheckFailure {
+    std::string Fixup;
+    bool ShouldFix;
+    std::vector<SourceRange> ReplacementRanges;
+    NamingCheckFailure(std::string F, bool SF = false)
+        : Fixup(F), ShouldFix(SF) {}
+
+    void addNewRange(SourceRange R) {
+      for (auto const &ExistingRange : ReplacementRanges) {
+        if (R == ExistingRange)
+          return;
+      }
+      ReplacementRanges.push_back(R);
+    }
+  };
+
+  typedef std::pair<SourceLocation, std::string> NamingCheckId;
+  // typedef const NamedDecl * NamingCheckId;
+  typedef llvm::DenseMap<NamingCheckId, NamingCheckFailure>
+      NamingCheckFailureMap;
+  typedef std::vector<std::pair<std::string, NamingCheckId>> ReplacedNamesSet;
+  typedef llvm::DenseMap<std::string, ReplacedNamesSet> ReplacedMembersMap;
 
 private:
-  llvm::DenseSet<const NamedDecl *> ReplacableDecls;
+  NamingCheckFailureMap Failures;
+  std::vector<const Expr *> DependentExprs;
+  ReplacedMembersMap TransformedMembers;
 };
 
 } // namespace libcxx
