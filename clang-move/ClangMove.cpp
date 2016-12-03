@@ -147,10 +147,9 @@ public:
     const clang::NamedDecl *D = FD;
     if (const auto *FTD = FD->getDescribedFunctionTemplate())
       D = FTD;
-    MoveTool->getMovedDecls().emplace_back(D,
-                                           &Result.Context->getSourceManager());
+    MoveTool->getMovedDecls().push_back(D);
     MoveTool->getUnremovedDeclsInOldHeader().erase(D);
-    MoveTool->getRemovedDecls().push_back(MoveTool->getMovedDecls().back());
+    MoveTool->addRemovedDecl(D);
   }
 
 private:
@@ -180,8 +179,8 @@ private:
     // Skip inline class methods. isInline() ast matcher doesn't ignore this
     // case.
     if (!CMD->isInlined()) {
-      MoveTool->getMovedDecls().emplace_back(CMD, SM);
-      MoveTool->getRemovedDecls().push_back(MoveTool->getMovedDecls().back());
+      MoveTool->getMovedDecls().push_back(CMD);
+      MoveTool->addRemovedDecl(CMD);
       // Get template class method from its method declaration as
       // UnremovedDecls stores template class method.
       if (const auto *FTD = CMD->getDescribedFunctionTemplate())
@@ -193,8 +192,8 @@ private:
 
   void MatchClassStaticVariable(const clang::NamedDecl *VD,
                                 clang::SourceManager* SM) {
-    MoveTool->getMovedDecls().emplace_back(VD, SM);
-    MoveTool->getRemovedDecls().push_back(MoveTool->getMovedDecls().back());
+    MoveTool->getMovedDecls().push_back(VD);
+    MoveTool->addRemovedDecl(VD);
     MoveTool->getUnremovedDeclsInOldHeader().erase(VD);
   }
 
@@ -203,12 +202,12 @@ private:
     // Get class template from its class declaration as UnremovedDecls stores
     // class template.
     if (const auto *TC = CD->getDescribedClassTemplate())
-      MoveTool->getMovedDecls().emplace_back(TC, SM);
+      MoveTool->getMovedDecls().push_back(TC);
     else
-      MoveTool->getMovedDecls().emplace_back(CD, SM);
-    MoveTool->getRemovedDecls().push_back(MoveTool->getMovedDecls().back());
+      MoveTool->getMovedDecls().push_back(CD);
+    MoveTool->addRemovedDecl(MoveTool->getMovedDecls().back());
     MoveTool->getUnremovedDeclsInOldHeader().erase(
-        MoveTool->getMovedDecls().back().Decl);
+        MoveTool->getMovedDecls().back());
   }
 
   ClangMoveTool *MoveTool;
@@ -217,18 +216,19 @@ private:
 // Expand to get the end location of the line where the EndLoc of the given
 // Decl.
 SourceLocation
-getLocForEndOfDecl(const clang::Decl *D, const SourceManager *SM,
+getLocForEndOfDecl(const clang::Decl *D,
                    const LangOptions &LangOpts = clang::LangOptions()) {
-  std::pair<FileID, unsigned> LocInfo = SM->getDecomposedLoc(D->getLocEnd());
+  const auto &SM = D->getASTContext().getSourceManager();
+  std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(D->getLocEnd());
   // Try to load the file buffer.
   bool InvalidTemp = false;
-  llvm::StringRef File = SM->getBufferData(LocInfo.first, &InvalidTemp);
+  llvm::StringRef File = SM.getBufferData(LocInfo.first, &InvalidTemp);
   if (InvalidTemp)
     return SourceLocation();
 
   const char *TokBegin = File.data() + LocInfo.second;
   // Lex from the start of the given location.
-  Lexer Lex(SM->getLocForStartOfFile(LocInfo.first), LangOpts, File.begin(),
+  Lexer Lex(SM.getLocForStartOfFile(LocInfo.first), LangOpts, File.begin(),
             TokBegin, File.end());
 
   llvm::SmallVector<char, 16> Line;
@@ -239,40 +239,42 @@ getLocForEndOfDecl(const clang::Decl *D, const SourceManager *SM,
   // If we already reach EOF, just return the EOF SourceLocation;
   // otherwise, move 1 offset ahead to include the trailing newline character
   // '\n'.
-  return SM->getLocForEndOfFile(LocInfo.first) == EndLoc
+  return SM.getLocForEndOfFile(LocInfo.first) == EndLoc
              ? EndLoc
              : EndLoc.getLocWithOffset(1);
 }
 
 // Get full range of a Decl including the comments associated with it.
 clang::CharSourceRange
-GetFullRange(const clang::SourceManager *SM, const clang::Decl *D,
+getFullRange(const clang::Decl *D,
              const clang::LangOptions &options = clang::LangOptions()) {
-  clang::SourceRange Full(SM->getExpansionLoc(D->getLocStart()),
-                          getLocForEndOfDecl(D, SM));
+  const auto &SM = D->getASTContext().getSourceManager();
+  clang::SourceRange Full(SM.getExpansionLoc(D->getLocStart()),
+                          getLocForEndOfDecl(D));
   // Expand to comments that are associated with the Decl.
   if (const auto *Comment = D->getASTContext().getRawCommentForDeclNoCache(D)) {
-    if (SM->isBeforeInTranslationUnit(Full.getEnd(), Comment->getLocEnd()))
+    if (SM.isBeforeInTranslationUnit(Full.getEnd(), Comment->getLocEnd()))
       Full.setEnd(Comment->getLocEnd());
     // FIXME: Don't delete a preceding comment, if there are no other entities
     // it could refer to.
-    if (SM->isBeforeInTranslationUnit(Comment->getLocStart(), Full.getBegin()))
+    if (SM.isBeforeInTranslationUnit(Comment->getLocStart(), Full.getBegin()))
       Full.setBegin(Comment->getLocStart());
   }
 
   return clang::CharSourceRange::getCharRange(Full);
 }
 
-std::string getDeclarationSourceText(const clang::Decl *D,
-                                     const clang::SourceManager *SM) {
-  llvm::StringRef SourceText = clang::Lexer::getSourceText(
-      GetFullRange(SM, D), *SM, clang::LangOptions());
+std::string getDeclarationSourceText(const clang::Decl *D) {
+  const auto &SM = D->getASTContext().getSourceManager();
+  llvm::StringRef SourceText =
+      clang::Lexer::getSourceText(getFullRange(D), SM, clang::LangOptions());
   return SourceText.str();
 }
 
-bool isInHeaderFile(const clang::SourceManager &SM, const clang::Decl *D,
+bool isInHeaderFile(const clang::Decl *D,
                     llvm::StringRef OriginalRunningDirectory,
                     llvm::StringRef OldHeader) {
+  const auto &SM = D->getASTContext().getSourceManager();
   if (OldHeader.empty())
     return false;
   auto ExpansionLoc = SM.getExpansionLoc(D->getLocStart());
@@ -287,7 +289,7 @@ bool isInHeaderFile(const clang::SourceManager &SM, const clang::Decl *D,
   return false;
 }
 
-std::vector<std::string> GetNamespaces(const clang::Decl *D) {
+std::vector<std::string> getNamespaces(const clang::Decl *D) {
   std::vector<std::string> Namespaces;
   for (const auto *Context = D->getDeclContext(); Context;
        Context = Context->getParent()) {
@@ -304,8 +306,9 @@ std::vector<std::string> GetNamespaces(const clang::Decl *D) {
 
 clang::tooling::Replacements
 createInsertedReplacements(const std::vector<std::string> &Includes,
-                           const std::vector<ClangMoveTool::MovedDecl> &Decls,
-                           llvm::StringRef FileName, bool IsHeader = false) {
+                           const std::vector<const NamedDecl *> &Decls,
+                           llvm::StringRef FileName, bool IsHeader = false,
+                           StringRef OldHeaderInclude = "") {
   std::string NewCode;
   std::string GuardName(FileName);
   if (IsHeader) {
@@ -318,6 +321,7 @@ createInsertedReplacements(const std::vector<std::string> &Includes,
     NewCode += "#define " + GuardName + "\n\n";
   }
 
+  NewCode += OldHeaderInclude;
   // Add #Includes.
   for (const auto &Include : Includes)
     NewCode += Include;
@@ -330,9 +334,9 @@ createInsertedReplacements(const std::vector<std::string> &Includes,
   //
   // Record namespaces where the current position is in.
   std::vector<std::string> CurrentNamespaces;
-  for (const auto &MovedDecl : Decls) {
+  for (const auto *MovedDecl : Decls) {
     // The namespaces of the declaration being moved.
-    std::vector<std::string> DeclNamespaces = GetNamespaces(MovedDecl.Decl);
+    std::vector<std::string> DeclNamespaces = getNamespaces(MovedDecl);
     auto CurrentIt = CurrentNamespaces.begin();
     auto DeclIt = DeclNamespaces.begin();
     // Skip the common prefix.
@@ -376,7 +380,7 @@ createInsertedReplacements(const std::vector<std::string> &Includes,
     // FIXME: Don't add empty lines between using declarations.
     if (!IsInNewNamespace)
       NewCode += "\n";
-    NewCode += getDeclarationSourceText(MovedDecl.Decl, MovedDecl.SM);
+    NewCode += getDeclarationSourceText(MovedDecl);
     CurrentNamespaces = std::move(NextNamespaces);
   }
   std::reverse(CurrentNamespaces.begin(), CurrentNamespaces.end());
@@ -399,36 +403,26 @@ ClangMoveAction::CreateASTConsumer(clang::CompilerInstance &Compiler,
   return MatchFinder.newASTConsumer();
 }
 
-ClangMoveTool::ClangMoveTool(
-    const MoveDefinitionSpec &MoveSpec,
-    std::map<std::string, tooling::Replacements> &FileToReplacements,
-    llvm::StringRef OriginalRunningDirectory, llvm::StringRef FallbackStyle)
-    : Spec(MoveSpec), FileToReplacements(FileToReplacements),
-      OriginalRunningDirectory(OriginalRunningDirectory),
-      FallbackStyle(FallbackStyle) {
-  if (!Spec.NewHeader.empty())
-    CCIncludes.push_back("#include \"" + Spec.NewHeader + "\"\n");
+ClangMoveTool::ClangMoveTool(ClangMoveContext *const Context,
+                             DeclarationReporter *const Reporter)
+    : Context(Context), Reporter(Reporter) {
+  if (!Context->Spec.NewHeader.empty())
+    CCIncludes.push_back("#include \"" + Context->Spec.NewHeader + "\"\n");
+}
+
+void ClangMoveTool::addRemovedDecl(const NamedDecl *Decl) {
+  const auto &SM = Decl->getASTContext().getSourceManager();
+  auto Loc = Decl->getLocation();
+  StringRef FilePath = SM.getFilename(Loc);
+  FilePathToFileID[FilePath] = SM.getFileID(Loc);
+  RemovedDecls.push_back(Decl);
 }
 
 void ClangMoveTool::registerMatchers(ast_matchers::MatchFinder *Finder) {
-  Optional<ast_matchers::internal::Matcher<NamedDecl>> HasAnySymbolNames;
-  for (StringRef SymbolName: Spec.Names) {
-    llvm::StringRef GlobalSymbolName = SymbolName.trim().ltrim(':');
-    const auto HasName = hasName(("::" + GlobalSymbolName).str());
-    HasAnySymbolNames =
-        HasAnySymbolNames ? anyOf(*HasAnySymbolNames, HasName) : HasName;
-  }
-  if (!HasAnySymbolNames) {
-    llvm::errs() << "No symbols being moved.\n";
-    return;
-  }
-
-  auto InOldHeader = isExpansionInFile(makeAbsolutePath(Spec.OldHeader));
-  auto InOldCC = isExpansionInFile(makeAbsolutePath(Spec.OldCC));
+  auto InOldHeader =
+      isExpansionInFile(makeAbsolutePath(Context->Spec.OldHeader));
+  auto InOldCC = isExpansionInFile(makeAbsolutePath(Context->Spec.OldCC));
   auto InOldFiles = anyOf(InOldHeader, InOldCC);
-  auto InMovedClass =
-      hasOutermostEnclosingClass(cxxRecordDecl(*HasAnySymbolNames));
-
   auto ForwardDecls =
       cxxRecordDecl(unless(anyOf(isImplicit(), isDefinition())));
 
@@ -438,15 +432,21 @@ void ClangMoveTool::registerMatchers(ast_matchers::MatchFinder *Finder) {
   // Match all top-level named declarations (e.g. function, variable, enum) in
   // old header, exclude forward class declarations and namespace declarations.
   //
-  // The old header which contains only one declaration being moved and forward
-  // declarations is considered to be moved totally.
+  // We consider declarations inside a class belongs to the class. So these
+  // declarations will be ignored.
   auto AllDeclsInHeader = namedDecl(
       unless(ForwardDecls), unless(namespaceDecl()),
-      unless(usingDirectiveDecl()), // using namespace decl.
+      unless(usingDirectiveDecl()),                 // using namespace decl.
       unless(classTemplateDecl(has(ForwardDecls))), // template forward decl.
       InOldHeader,
-      hasParent(decl(anyOf(namespaceDecl(), translationUnitDecl()))));
+      hasParent(decl(anyOf(namespaceDecl(), translationUnitDecl()))),
+      hasDeclContext(decl(anyOf(namespaceDecl(), translationUnitDecl()))));
   Finder->addMatcher(AllDeclsInHeader.bind("decls_in_header"), this);
+
+  // Don't register other matchers when dumping all declarations in header.
+  if (Context->DumpDeclarations)
+    return;
+
   // Match forward declarations in old header.
   Finder->addMatcher(namedDecl(ForwardDecls, InOldHeader).bind("fwd_decl"),
                      this);
@@ -474,6 +474,20 @@ void ClangMoveTool::registerMatchers(ast_matchers::MatchFinder *Finder) {
 
   // Match static functions/variable definitions which are defined in named
   // namespaces.
+  Optional<ast_matchers::internal::Matcher<NamedDecl>> HasAnySymbolNames;
+  for (StringRef SymbolName : Context->Spec.Names) {
+    llvm::StringRef GlobalSymbolName = SymbolName.trim().ltrim(':');
+    const auto HasName = hasName(("::" + GlobalSymbolName).str());
+    HasAnySymbolNames =
+        HasAnySymbolNames ? anyOf(*HasAnySymbolNames, HasName) : HasName;
+  }
+
+  if (!HasAnySymbolNames) {
+    llvm::errs() << "No symbols being moved.\n";
+    return;
+  }
+  auto InMovedClass =
+      hasOutermostEnclosingClass(cxxRecordDecl(*HasAnySymbolNames));
   auto IsOldCCStaticDefinition =
       allOf(isDefinition(), unless(InMovedClass), InOldCCNamedOrGlobalNamespace,
             isStaticStorageClass());
@@ -521,27 +535,27 @@ void ClangMoveTool::run(const ast_matchers::MatchFinder::MatchResult &Result) {
     UnremovedDeclsInOldHeader.insert(D);
   } else if (const auto *FWD =
                  Result.Nodes.getNodeAs<clang::CXXRecordDecl>("fwd_decl")) {
-    // Skip all forwad declarations which appear after moved class declaration.
+    // Skip all forward declarations which appear after moved class declaration.
     if (RemovedDecls.empty()) {
       if (const auto *DCT = FWD->getDescribedClassTemplate())
-        MovedDecls.emplace_back(DCT, &Result.Context->getSourceManager());
+        MovedDecls.push_back(DCT);
       else
-        MovedDecls.emplace_back(FWD, &Result.Context->getSourceManager());
+        MovedDecls.push_back(FWD);
     }
   } else if (const auto *ANS =
                  Result.Nodes.getNodeAs<clang::NamespaceDecl>("anonymous_ns")) {
-    MovedDecls.emplace_back(ANS, &Result.Context->getSourceManager());
+    MovedDecls.push_back(ANS);
   } else if (const auto *ND =
                  Result.Nodes.getNodeAs<clang::NamedDecl>("static_decls")) {
-    MovedDecls.emplace_back(ND, &Result.Context->getSourceManager());
+    MovedDecls.push_back(ND);
   } else if (const auto *UD =
                  Result.Nodes.getNodeAs<clang::NamedDecl>("using_decl")) {
-    MovedDecls.emplace_back(UD, &Result.Context->getSourceManager());
+    MovedDecls.push_back(UD);
   }
 }
 
 std::string ClangMoveTool::makeAbsolutePath(StringRef Path) {
-  return MakeAbsolutePath(OriginalRunningDirectory, Path);
+  return MakeAbsolutePath(Context->OriginalRunningDirectory, Path);
 }
 
 void ClangMoveTool::addIncludes(llvm::StringRef IncludeHeader, bool IsAngled,
@@ -551,7 +565,7 @@ void ClangMoveTool::addIncludes(llvm::StringRef IncludeHeader, bool IsAngled,
                                 const SourceManager &SM) {
   SmallVector<char, 128> HeaderWithSearchPath;
   llvm::sys::path::append(HeaderWithSearchPath, SearchPath, IncludeHeader);
-  std::string AbsoluteOldHeader = makeAbsolutePath(Spec.OldHeader);
+  std::string AbsoluteOldHeader = makeAbsolutePath(Context->Spec.OldHeader);
   // FIXME: Add old.h to the new.cc/h when the new target has dependencies on
   // old.h/c. For instance, when moved class uses another class defined in
   // old.h, the old.h should be added in new.h.
@@ -569,58 +583,85 @@ void ClangMoveTool::addIncludes(llvm::StringRef IncludeHeader, bool IsAngled,
   std::string AbsoluteCurrentFile = MakeAbsolutePath(SM, FileName);
   if (AbsoluteOldHeader == AbsoluteCurrentFile) {
     HeaderIncludes.push_back(IncludeLine);
-  } else if (makeAbsolutePath(Spec.OldCC) == AbsoluteCurrentFile) {
+  } else if (makeAbsolutePath(Context->Spec.OldCC) == AbsoluteCurrentFile) {
     CCIncludes.push_back(IncludeLine);
   }
 }
 
-void ClangMoveTool::removeClassDefinitionInOldFiles() {
-  for (const auto &MovedDecl : RemovedDecls) {
-    const auto &SM = *MovedDecl.SM;
-    auto Range = GetFullRange(&SM, MovedDecl.Decl);
+void ClangMoveTool::removeDeclsInOldFiles() {
+  if (RemovedDecls.empty()) return;
+  for (const auto *RemovedDecl : RemovedDecls) {
+    const auto &SM = RemovedDecl->getASTContext().getSourceManager();
+    auto Range = getFullRange(RemovedDecl);
     clang::tooling::Replacement RemoveReplacement(
-        *MovedDecl.SM,
+        SM,
         clang::CharSourceRange::getCharRange(Range.getBegin(), Range.getEnd()),
         "");
     std::string FilePath = RemoveReplacement.getFilePath().str();
-    auto Err = FileToReplacements[FilePath].add(RemoveReplacement);
-    if (Err) {
+    auto Err = Context->FileToReplacements[FilePath].add(RemoveReplacement);
+    if (Err)
       llvm::errs() << llvm::toString(std::move(Err)) << "\n";
-      continue;
+  }
+  const auto &SM = RemovedDecls[0]->getASTContext().getSourceManager();
+
+  // Post process of cleanup around all the replacements.
+  for (auto &FileAndReplacements : Context->FileToReplacements) {
+    StringRef FilePath = FileAndReplacements.first;
+    // Add #include of new header to old header.
+    if (Context->Spec.OldDependOnNew &&
+        MakeAbsolutePath(SM, FilePath) ==
+            makeAbsolutePath(Context->Spec.OldHeader)) {
+      // FIXME: Minimize the include path like include-fixer.
+      std::string IncludeNewH =
+          "#include \"" + Context->Spec.NewHeader + "\"\n";
+      // This replacment for inserting header will be cleaned up at the end.
+      auto Err = FileAndReplacements.second.add(
+          tooling::Replacement(FilePath, UINT_MAX, 0, IncludeNewH));
+      if (Err)
+        llvm::errs() << llvm::toString(std::move(Err)) << "\n";
     }
 
-    llvm::StringRef Code =
-        SM.getBufferData(SM.getFileID(MovedDecl.Decl->getLocation()));
+    auto SI = FilePathToFileID.find(FilePath);
+    // Ignore replacements for new.h/cc.
+    if (SI == FilePathToFileID.end()) continue;
+    llvm::StringRef Code = SM.getBufferData(SI->second);
     format::FormatStyle Style =
-        format::getStyle("file", FilePath, FallbackStyle);
+        format::getStyle("file", FilePath, Context->FallbackStyle);
     auto CleanReplacements = format::cleanupAroundReplacements(
-        Code, FileToReplacements[FilePath], Style);
+        Code, Context->FileToReplacements[FilePath], Style);
 
     if (!CleanReplacements) {
       llvm::errs() << llvm::toString(CleanReplacements.takeError()) << "\n";
       continue;
     }
-    FileToReplacements[FilePath] = *CleanReplacements;
+    Context->FileToReplacements[FilePath] = *CleanReplacements;
   }
 }
 
-void ClangMoveTool::moveClassDefinitionToNewFiles() {
-  std::vector<MovedDecl> NewHeaderDecls;
-  std::vector<MovedDecl> NewCCDecls;
-  for (const auto &MovedDecl : MovedDecls) {
-    if (isInHeaderFile(*MovedDecl.SM, MovedDecl.Decl, OriginalRunningDirectory,
-                       Spec.OldHeader))
+void ClangMoveTool::moveDeclsToNewFiles() {
+  std::vector<const NamedDecl *> NewHeaderDecls;
+  std::vector<const NamedDecl *> NewCCDecls;
+  for (const auto *MovedDecl : MovedDecls) {
+    if (isInHeaderFile(MovedDecl, Context->OriginalRunningDirectory,
+                       Context->Spec.OldHeader))
       NewHeaderDecls.push_back(MovedDecl);
     else
       NewCCDecls.push_back(MovedDecl);
   }
 
-  if (!Spec.NewHeader.empty())
-    FileToReplacements[Spec.NewHeader] = createInsertedReplacements(
-        HeaderIncludes, NewHeaderDecls, Spec.NewHeader, /*IsHeader=*/true);
-  if (!Spec.NewCC.empty())
-    FileToReplacements[Spec.NewCC] =
-        createInsertedReplacements(CCIncludes, NewCCDecls, Spec.NewCC);
+  if (!Context->Spec.NewHeader.empty()) {
+    std::string OldHeaderInclude =
+        Context->Spec.NewDependOnOld
+            ? "#include \"" + Context->Spec.OldHeader + "\"\n"
+            : "";
+    Context->FileToReplacements[Context->Spec.NewHeader] =
+        createInsertedReplacements(HeaderIncludes, NewHeaderDecls,
+                                   Context->Spec.NewHeader, /*IsHeader=*/true,
+                                   OldHeaderInclude);
+  }
+  if (!Context->Spec.NewCC.empty())
+    Context->FileToReplacements[Context->Spec.NewCC] =
+        createInsertedReplacements(CCIncludes, NewCCDecls, Context->Spec.NewCC);
 }
 
 // Move all contents from OldFile to NewFile.
@@ -637,7 +678,8 @@ void ClangMoveTool::moveAll(SourceManager &SM, StringRef OldFile,
   clang::tooling::Replacement RemoveAll (
       SM, clang::CharSourceRange::getCharRange(Begin, End), "");
   std::string FilePath = RemoveAll.getFilePath().str();
-  FileToReplacements[FilePath] = clang::tooling::Replacements(RemoveAll);
+  Context->FileToReplacements[FilePath] =
+      clang::tooling::Replacements(RemoveAll);
 
   StringRef Code = SM.getBufferData(ID);
   if (!NewFile.empty()) {
@@ -645,26 +687,40 @@ void ClangMoveTool::moveAll(SourceManager &SM, StringRef OldFile,
         clang::tooling::Replacement(NewFile, 0, 0, Code));
     // If we are moving from old.cc, an extra step is required: excluding
     // the #include of "old.h", instead, we replace it with #include of "new.h".
-    if (Spec.NewCC == NewFile && OldHeaderIncludeRange.isValid()) {
+    if (Context->Spec.NewCC == NewFile && OldHeaderIncludeRange.isValid()) {
       AllCode = AllCode.merge(
           clang::tooling::Replacements(clang::tooling::Replacement(
-              SM, OldHeaderIncludeRange, '"' + Spec.NewHeader + '"')));
+              SM, OldHeaderIncludeRange, '"' + Context->Spec.NewHeader + '"')));
     }
-    FileToReplacements[NewFile] = std::move(AllCode);
+    Context->FileToReplacements[NewFile] = std::move(AllCode);
   }
 }
 
 void ClangMoveTool::onEndOfTranslationUnit() {
-  if (RemovedDecls.empty())
-    return;
-  if (UnremovedDeclsInOldHeader.empty() && !Spec.OldHeader.empty()) {
-    auto &SM = *RemovedDecls[0].SM;
-    moveAll(SM, Spec.OldHeader, Spec.NewHeader);
-    moveAll(SM, Spec.OldCC, Spec.NewCC);
+  if (Context->DumpDeclarations) {
+    assert(Reporter);
+    for (const auto *Decl : UnremovedDeclsInOldHeader) {
+      auto Kind = Decl->getKind();
+      const std::string QualifiedName = Decl->getQualifiedNameAsString();
+      if (Kind == Decl::Kind::Function || Kind == Decl::Kind::FunctionTemplate)
+        Reporter->reportDeclaration(QualifiedName, "Function");
+      else if (Kind == Decl::Kind::ClassTemplate ||
+               Kind == Decl::Kind::CXXRecord)
+        Reporter->reportDeclaration(QualifiedName, "Class");
+    }
     return;
   }
-  removeClassDefinitionInOldFiles();
-  moveClassDefinitionToNewFiles();
+
+  if (RemovedDecls.empty())
+    return;
+  if (UnremovedDeclsInOldHeader.empty() && !Context->Spec.OldHeader.empty()) {
+    auto &SM = RemovedDecls[0]->getASTContext().getSourceManager();
+    moveAll(SM, Context->Spec.OldHeader, Context->Spec.NewHeader);
+    moveAll(SM, Context->Spec.OldCC, Context->Spec.NewCC);
+    return;
+  }
+  removeDeclsInOldFiles();
+  moveDeclsToNewFiles();
 }
 
 } // namespace move

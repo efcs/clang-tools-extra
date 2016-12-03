@@ -13,6 +13,7 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Format/Format.h"
 #include "clang/Tooling/Core/Replacement.h"
+#include "llvm/Support/Regex.h"
 #include <string>
 
 namespace clang {
@@ -76,6 +77,10 @@ private:
   void fixUsingShadowDecl(const ast_matchers::MatchFinder::MatchResult &Result,
                           const UsingDecl *UsingDeclaration);
 
+  void fixDeclRefExpr(const ast_matchers::MatchFinder::MatchResult &Result,
+                      const DeclContext *UseContext, const NamedDecl *From,
+                      const DeclRefExpr *Ref);
+
   // Information about moving an old namespace.
   struct MoveNamespace {
     // The start offset of the namespace block being moved in the original
@@ -127,6 +132,7 @@ private:
   std::string DiffNewNamespace;
   // A regex pattern that matches files to be processed.
   std::string FilePattern;
+  llvm::Regex FilePatternRE;
   // Information about moved namespaces grouped by file.
   // Since we are modifying code in old namespaces (e.g. add namespace
   // spedifiers) as well as moving them, we store information about namespaces
