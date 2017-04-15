@@ -17,6 +17,7 @@
 #include "DefinitionsInHeadersCheck.h"
 #include "FoldInitTypeCheck.h"
 #include "ForwardDeclarationNamespaceCheck.h"
+#include "ForwardingReferenceOverloadCheck.h"
 #include "InaccurateEraseCheck.h"
 #include "IncorrectRoundings.h"
 #include "InefficientAlgorithmCheck.h"
@@ -35,9 +36,11 @@
 #include "SizeofContainerCheck.h"
 #include "SizeofExpressionCheck.h"
 #include "StaticAssertCheck.h"
+#include "StringCompareCheck.h"
 #include "StringConstructorCheck.h"
 #include "StringIntegerAssignmentCheck.h"
 #include "StringLiteralWithEmbeddedNulCheck.h"
+#include "SuspiciousEnumUsageCheck.h"
 #include "SuspiciousMissingCommaCheck.h"
 #include "SuspiciousSemicolonCheck.h"
 #include "SuspiciousStringCompareCheck.h"
@@ -63,6 +66,8 @@ public:
     CheckFactories.registerCheck<ArgumentCommentCheck>("misc-argument-comment");
     CheckFactories.registerCheck<AssertSideEffectCheck>(
         "misc-assert-side-effect");
+    CheckFactories.registerCheck<ForwardingReferenceOverloadCheck>(
+        "misc-forwarding-reference-overload");
     CheckFactories.registerCheck<MisplacedConstCheck>("misc-misplaced-const");
     CheckFactories.registerCheck<UnconventionalAssignOperatorCheck>(
         "misc-unconventional-assign-operator");
@@ -105,12 +110,15 @@ public:
     CheckFactories.registerCheck<SizeofExpressionCheck>(
         "misc-sizeof-expression");
     CheckFactories.registerCheck<StaticAssertCheck>("misc-static-assert");
+    CheckFactories.registerCheck<StringCompareCheck>("misc-string-compare");
     CheckFactories.registerCheck<StringConstructorCheck>(
         "misc-string-constructor");
     CheckFactories.registerCheck<StringIntegerAssignmentCheck>(
         "misc-string-integer-assignment");
     CheckFactories.registerCheck<StringLiteralWithEmbeddedNulCheck>(
         "misc-string-literal-with-embedded-nul");
+    CheckFactories.registerCheck<SuspiciousEnumUsageCheck>(
+        "misc-suspicious-enum-usage");
     CheckFactories.registerCheck<SuspiciousMissingCommaCheck>(
         "misc-suspicious-missing-comma");
     CheckFactories.registerCheck<SuspiciousSemicolonCheck>(

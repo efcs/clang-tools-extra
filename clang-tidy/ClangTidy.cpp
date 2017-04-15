@@ -35,6 +35,7 @@
 #include "clang/Rewrite/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
 #include "clang/StaticAnalyzer/Frontend/AnalysisConsumer.h"
+#include "clang/Tooling/DiagnosticsYaml.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/ReplacementsYaml.h"
 #include "clang/Tooling/Tooling.h"
@@ -88,13 +89,13 @@ private:
 
 class ErrorReporter {
 public:
-  ErrorReporter(bool ApplyFixes, StringRef FormatStyle)
+  ErrorReporter(ClangTidyContext &Context, bool ApplyFixes)
       : Files(FileSystemOptions()), DiagOpts(new DiagnosticOptions()),
         DiagPrinter(new TextDiagnosticPrinter(llvm::outs(), &*DiagOpts)),
         Diags(IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs), &*DiagOpts,
               DiagPrinter),
-        SourceMgr(Diags, Files), ApplyFixes(ApplyFixes), TotalFixes(0),
-        AppliedFixes(0), WarningsAsErrors(0), FormatStyle(FormatStyle) {
+        SourceMgr(Diags, Files), Context(Context), ApplyFixes(ApplyFixes),
+        TotalFixes(0), AppliedFixes(0), WarningsAsErrors(0) {
     DiagOpts->ShowColors = llvm::sys::Process::StandardOutHasColors();
     DiagPrinter->BeginSourceFile(LangOpts);
   }
@@ -102,14 +103,14 @@ public:
   SourceManager &getSourceManager() { return SourceMgr; }
 
   void reportDiagnostic(const ClangTidyError &Error) {
-    const ClangTidyMessage &Message = Error.Message;
+    const tooling::DiagnosticMessage &Message = Error.Message;
     SourceLocation Loc = getLocation(Message.FilePath, Message.FileOffset);
     // Contains a pair for each attempted fix: location and whether the fix was
     // applied successfully.
     SmallVector<std::pair<SourceLocation, bool>, 4> FixLocations;
     {
       auto Level = static_cast<DiagnosticsEngine::Level>(Error.DiagLevel);
-      std::string Name = Error.CheckName;
+      std::string Name = Error.DiagnosticName;
       if (Error.IsWarningAsError) {
         Name += ",-warnings-as-errors";
         Level = DiagnosticsEngine::Error;
@@ -177,12 +178,11 @@ public:
       Diags.Report(Fix.first, Fix.second ? diag::note_fixit_applied
                                          : diag::note_fixit_failed);
     }
-    for (const ClangTidyMessage &Note : Error.Notes)
+    for (const auto &Note : Error.Notes)
       reportNote(Note);
   }
 
   void Finish() {
-    // FIXME: Run clang-format on changes.
     if (ApplyFixes && TotalFixes > 0) {
       Rewriter Rewrite(SourceMgr, LangOpts);
       for (const auto &FileAndReplacements : FileReplacements) {
@@ -196,15 +196,29 @@ public:
           continue;
         }
         StringRef Code = Buffer.get()->getBuffer();
-        format::FormatStyle Style = format::getStyle("file", File, FormatStyle);
-        llvm::Expected<Replacements> CleanReplacements =
-            format::cleanupAroundReplacements(Code, FileAndReplacements.second,
-                                              Style);
-        if (!CleanReplacements) {
-          llvm::errs() << llvm::toString(CleanReplacements.takeError()) << "\n";
+        auto Style = format::getStyle(
+            *Context.getOptionsForFile(File).FormatStyle, File, "none");
+        if (!Style) {
+          llvm::errs() << llvm::toString(Style.takeError()) << "\n";
           continue;
         }
-        if (!tooling::applyAllReplacements(CleanReplacements.get(), Rewrite)) {
+        llvm::Expected<tooling::Replacements> Replacements =
+            format::cleanupAroundReplacements(Code, FileAndReplacements.second,
+                                              *Style);
+        if (!Replacements) {
+          llvm::errs() << llvm::toString(Replacements.takeError()) << "\n";
+          continue;
+        }
+        if (llvm::Expected<tooling::Replacements> FormattedReplacements =
+                format::formatReplacements(Code, *Replacements, *Style)) {
+          Replacements = std::move(FormattedReplacements);
+          if (!Replacements)
+            llvm_unreachable("!Replacements");
+        } else {
+          llvm::errs() << llvm::toString(FormattedReplacements.takeError())
+                       << ". Skipping formatting.\n";
+        }
+        if (!tooling::applyAllReplacements(Replacements.get(), Rewrite)) {
           llvm::errs() << "Can't apply replacements for file " << File << "\n";
         }
       }
@@ -225,14 +239,13 @@ private:
       return SourceLocation();
 
     const FileEntry *File = SourceMgr.getFileManager().getFile(FilePath);
-    FileID ID = SourceMgr.createFileID(File, SourceLocation(), SrcMgr::C_User);
+    FileID ID = SourceMgr.getOrCreateFileID(File, SrcMgr::C_User);
     return SourceMgr.getLocForStartOfFile(ID).getLocWithOffset(Offset);
   }
 
-  void reportNote(const ClangTidyMessage &Message) {
+  void reportNote(const tooling::DiagnosticMessage &Message) {
     SourceLocation Loc = getLocation(Message.FilePath, Message.FileOffset);
-    DiagnosticBuilder Diag =
-        Diags.Report(Loc, Diags.getCustomDiagID(DiagnosticsEngine::Note, "%0"))
+    Diags.Report(Loc, Diags.getCustomDiagID(DiagnosticsEngine::Note, "%0"))
         << Message.Message;
   }
 
@@ -243,11 +256,11 @@ private:
   DiagnosticsEngine Diags;
   SourceManager SourceMgr;
   llvm::StringMap<Replacements> FileReplacements;
+  ClangTidyContext &Context;
   bool ApplyFixes;
   unsigned TotalFixes;
   unsigned AppliedFixes;
   unsigned WarningsAsErrors;
-  StringRef FormatStyle;
 };
 
 class ClangTidyASTConsumer : public MultiplexConsumer {
@@ -459,13 +472,10 @@ ClangTidyOptions::OptionMap getCheckOptions(const ClangTidyOptions &Options) {
   return Factory.getCheckOptions();
 }
 
-ClangTidyStats
-runClangTidy(std::unique_ptr<ClangTidyOptionsProvider> OptionsProvider,
-             const CompilationDatabase &Compilations,
-             ArrayRef<std::string> InputFiles,
-             std::vector<ClangTidyError> *Errors, ProfileData *Profile) {
+void runClangTidy(clang::tidy::ClangTidyContext &Context,
+                  const CompilationDatabase &Compilations,
+                  ArrayRef<std::string> InputFiles, ProfileData *Profile) {
   ClangTool Tool(Compilations, InputFiles);
-  clang::tidy::ClangTidyContext Context(std::move(OptionsProvider));
 
   // Add extra arguments passed by the clang-tidy command-line.
   ArgumentsAdjuster PerFileExtraArgumentsInserter =
@@ -487,7 +497,7 @@ runClangTidy(std::unique_ptr<ClangTidyOptionsProvider> OptionsProvider,
 
   // Remove plugins arguments.
   ArgumentsAdjuster PluginArgumentsRemover =
-      [&Context](const CommandLineArguments &Args, StringRef Filename) {
+      [](const CommandLineArguments &Args, StringRef Filename) {
         CommandLineArguments AdjustedArgs;
         for (size_t I = 0, E = Args.size(); I < E; ++I) {
           if (I + 4 < Args.size() && Args[I] == "-Xclang" &&
@@ -533,20 +543,18 @@ runClangTidy(std::unique_ptr<ClangTidyOptionsProvider> OptionsProvider,
 
   ActionFactory Factory(Context);
   Tool.run(&Factory);
-  *Errors = Context.getErrors();
-  return Context.getStats();
 }
 
-void handleErrors(const std::vector<ClangTidyError> &Errors, bool Fix,
-                  StringRef FormatStyle, unsigned &WarningsAsErrorsCount) {
-  ErrorReporter Reporter(Fix, FormatStyle);
+void handleErrors(ClangTidyContext &Context, bool Fix,
+                  unsigned &WarningsAsErrorsCount) {
+  ErrorReporter Reporter(Context, Fix);
   vfs::FileSystem &FileSystem =
       *Reporter.getSourceManager().getFileManager().getVirtualFileSystem();
   auto InitialWorkingDir = FileSystem.getCurrentWorkingDirectory();
   if (!InitialWorkingDir)
     llvm::report_fatal_error("Cannot get current working path.");
 
-  for (const ClangTidyError &Error : Errors) {
+  for (const ClangTidyError &Error : Context.getErrors()) {
     if (!Error.BuildDirectory.empty()) {
       // By default, the working directory of file system is the current
       // clang-tidy running directory.
@@ -562,18 +570,18 @@ void handleErrors(const std::vector<ClangTidyError> &Errors, bool Fix,
   WarningsAsErrorsCount += Reporter.getWarningsAsErrorsCount();
 }
 
-void exportReplacements(const std::vector<ClangTidyError> &Errors,
+void exportReplacements(const llvm::StringRef MainFilePath,
+                        const std::vector<ClangTidyError> &Errors,
                         raw_ostream &OS) {
-  TranslationUnitReplacements TUR;
-  for (const ClangTidyError &Error : Errors) {
-    for (const auto &FileAndFixes : Error.Fix)
-      TUR.Replacements.insert(TUR.Replacements.end(),
-                              FileAndFixes.second.begin(),
-                              FileAndFixes.second.end());
+  TranslationUnitDiagnostics TUD;
+  TUD.MainSourceFile = MainFilePath;
+  for (const auto &Error : Errors) {
+    tooling::Diagnostic Diag = Error;
+    TUD.Diagnostics.insert(TUD.Diagnostics.end(), Diag);
   }
 
   yaml::Output YAML(OS);
-  YAML << TUR;
+  YAML << TUD;
 }
 
 } // namespace tidy

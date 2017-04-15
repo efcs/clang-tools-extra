@@ -61,6 +61,20 @@ public:
 class Derived : public Container {
 };
 
+class Container2 {
+public:
+  int size() const;
+  bool empty() const { return size() == 0; }
+};
+
+class Container3 {
+public:
+  int size() const;
+  bool empty() const;
+};
+
+bool Container3::empty() const { return this->size() == 0; }
+
 int main() {
   std::set<int> intSet;
   std::string str;
@@ -154,6 +168,10 @@ int main() {
     ;
   // CHECK-MESSAGES: :[[@LINE-2]]:7: warning: the 'empty' method should be used
   // CHECK-FIXES: {{^  }}if (vect3->empty()){{$}}
+  if ((*vect3).size() == 0)
+    ;
+  // CHECK-MESSAGES: :[[@LINE-2]]:7: warning: the 'empty' method should be used
+  // CHECK-FIXES: {{^  }}if ((*vect3).empty()){{$}}
 
   delete vect3;
 

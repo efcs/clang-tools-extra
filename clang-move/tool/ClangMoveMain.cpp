@@ -10,6 +10,7 @@
 #include "ClangMove.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+#include "clang/Tooling/ArgumentsAdjusters.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/Tooling.h"
@@ -61,19 +62,19 @@ cl::opt<std::string>
     NewCC("new_cc", cl::desc("The relative/absolute file path of new cc."),
           cl::cat(ClangMoveCategory));
 
-cl::opt<bool> OldDependOnNew(
-    "old_depend_on_new",
-    cl::desc(
-        "Whether old header will depend on new header. If true, clang-move will "
-        "add #include of new header to old header."),
-    cl::init(false), cl::cat(ClangMoveCategory));
+cl::opt<bool>
+    OldDependOnNew("old_depend_on_new",
+                   cl::desc("Whether old header will depend on new header. If "
+                            "true, clang-move will "
+                            "add #include of new header to old header."),
+                   cl::init(false), cl::cat(ClangMoveCategory));
 
-cl::opt<bool> NewDependOnOld(
-    "new_depend_on_old",
-    cl::desc(
-        "Whether new header will depend on old header. If true, clang-move will "
-        "add #include of old header to new header."),
-    cl::init(false), cl::cat(ClangMoveCategory));
+cl::opt<bool>
+    NewDependOnOld("new_depend_on_old",
+                   cl::desc("Whether new header will depend on old header. If "
+                            "true, clang-move will "
+                            "add #include of old header to new header."),
+                   cl::init(false), cl::cat(ClangMoveCategory));
 
 cl::opt<std::string>
     Style("style",
@@ -95,18 +96,7 @@ cl::opt<bool> DumpDecls(
 
 int main(int argc, const char **argv) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
-  // Add "-fparse-all-comments" compile option to make clang parse all comments,
-  // otherwise, ordinary comments like "//" and "/*" won't get parsed (This is
-  // a bit of hacky).
-  std::vector<std::string> ExtraArgs(argv, argv + argc);
-  ExtraArgs.insert(ExtraArgs.begin() + 1, "-extra-arg=-fparse-all-comments");
-  std::unique_ptr<const char *[]> RawExtraArgs(
-      new const char *[ExtraArgs.size()]);
-  for (size_t i = 0; i < ExtraArgs.size(); ++i)
-    RawExtraArgs[i] = ExtraArgs[i].c_str();
-  int Argc = argc + 1;
-  tooling::CommonOptionsParser OptionsParser(Argc, RawExtraArgs.get(),
-                                             ClangMoveCategory);
+  tooling::CommonOptionsParser OptionsParser(argc, argv, ClangMoveCategory);
 
   if (OldDependOnNew && NewDependOnOld) {
     llvm::errs() << "Provide either --old_depend_on_new or "
@@ -117,6 +107,9 @@ int main(int argc, const char **argv) {
 
   tooling::RefactoringTool Tool(OptionsParser.getCompilations(),
                                 OptionsParser.getSourcePathList());
+  // Add "-fparse-all-comments" compile option to make clang parse all comments.
+  Tool.appendArgumentsAdjuster(tooling::getInsertArgumentAdjuster(
+      "-fparse-all-comments", tooling::ArgumentInsertPosition::BEGIN));
   move::MoveDefinitionSpec Spec;
   Spec.Names = {Names.begin(), Names.end()};
   Spec.OldHeader = OldHeader;
@@ -134,25 +127,22 @@ int main(int argc, const char **argv) {
   move::ClangMoveContext Context{Spec, Tool.getReplacements(),
                                  InitialDirectory.str(), Style, DumpDecls};
   move::DeclarationReporter Reporter;
-  auto Factory = llvm::make_unique<clang::move::ClangMoveActionFactory>(
-      &Context, &Reporter);
-
-  int CodeStatus = Tool.run(Factory.get());
+  move::ClangMoveActionFactory Factory(&Context, &Reporter);
+  
+  int CodeStatus = Tool.run(&Factory);
   if (CodeStatus)
     return CodeStatus;
 
   if (DumpDecls) {
     llvm::outs() << "[\n";
     const auto &Declarations = Reporter.getDeclarationList();
-    for (auto DeclPair : Declarations) {
+    for (auto I = Declarations.begin(), E = Declarations.end(); I != E; ++I) {
       llvm::outs() << "  {\n";
-      llvm::outs() << "    \"DeclarationName\": \"" << DeclPair.first
-                   << "\",\n";
-      llvm::outs() << "    \"DeclarationType\": \"" << DeclPair.second
-                   << "\"\n";
+      llvm::outs() << "    \"DeclarationName\": \"" << I->first << "\",\n";
+      llvm::outs() << "    \"DeclarationType\": \"" << I->second << "\"\n";
       llvm::outs() << "  }";
       // Don't print trailing "," at the end of last element.
-      if (DeclPair != *(--Declarations.end()))
+      if (I != std::prev(E))
         llvm::outs() << ",\n";
     }
     llvm::outs() << "\n]\n";
@@ -196,10 +186,10 @@ int main(int argc, const char **argv) {
       Files.insert(it.first);
     auto WriteToJson = [&](llvm::raw_ostream &OS) {
       OS << "[\n";
-      for (auto File : Files) {
+      for (auto I = Files.begin(), E = Files.end(); I != E; ++I) {
         OS << "  {\n";
-        OS << "    \"FilePath\": \"" << File << "\",\n";
-        const auto *Entry = FileMgr.getFile(File);
+        OS << "    \"FilePath\": \"" << *I << "\",\n";
+        const auto *Entry = FileMgr.getFile(*I);
         auto ID = SM.translateFile(Entry);
         std::string Content;
         llvm::raw_string_ostream ContentStream(Content);
@@ -207,7 +197,7 @@ int main(int argc, const char **argv) {
         OS << "    \"SourceText\": \""
            << llvm::yaml::escape(ContentStream.str()) << "\"\n";
         OS << "  }";
-        if (File != *(--Files.end()))
+        if (I != std::prev(E))
           OS << ",\n";
       }
       OS << "\n]\n";
