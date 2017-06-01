@@ -17,14 +17,19 @@ struct Foo {
   inline void foo(U);
 
   static int compare();
+  // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function template 'compare' is not inline
+  // CHECK-FIXES: static int compare();
 };
 
 template <class T>
+// CHECK-FIXES:{{^}}void Foo<T>::baz() {}
 void Foo<T>::baz() {}
 
+// CHECK-FIXES:{{^}}int Foo<T>::compare() {return 0;}
 template <class T>
 int Foo<T>::compare() {return 0;}
 
 template <class T>
 template <class U>
+// CHECK-FIXES:{{^}}void Foo<T>::foo(U) {}
 void Foo<T>::foo(U) {}
