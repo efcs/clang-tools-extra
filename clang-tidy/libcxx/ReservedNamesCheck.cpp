@@ -230,7 +230,7 @@ extractDependentName(const TypeLoc *Loc) {
   if (Decl)
     goto finish_extract;
 
-#if 0
+#if 1
   if (const auto &Ref = Loc->getAs<TemplateSpecializationTypeLoc>()) {
     const auto *ODecl = Ref.getTypePtr()->getTemplateName().getAsTemplateDecl();
     Decl = cast<NamedDecl>(ODecl);
