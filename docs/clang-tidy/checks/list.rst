@@ -86,6 +86,7 @@ Clang-Tidy Checks
    misc-inaccurate-erase
    misc-incorrect-roundings
    misc-inefficient-algorithm
+   misc-lambda-function-name
    misc-macro-parentheses
    misc-macro-repeated-side-effects
    misc-misplaced-const
@@ -138,6 +139,7 @@ Clang-Tidy Checks
    modernize-use-emplace
    modernize-use-equals-default
    modernize-use-equals-delete
+   modernize-use-noexcept
    modernize-use-nullptr
    modernize-use-override
    modernize-use-transparent-functors
