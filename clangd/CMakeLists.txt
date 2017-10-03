@@ -10,6 +10,7 @@ add_clang_library(clangDaemon
   DraftStore.cpp
   GlobalCompilationDatabase.cpp
   JSONRPCDispatcher.cpp
+  Logger.cpp
   Protocol.cpp
   ProtocolHandlers.cpp
 
@@ -18,7 +19,10 @@ add_clang_library(clangDaemon
   clangBasic
   clangFormat
   clangFrontend
+  clangIndex
+  clangLex
   clangSema
+  clangSerialization
   clangTooling
   clangToolingCore
   ${LLVM_PTHREAD_LIB}

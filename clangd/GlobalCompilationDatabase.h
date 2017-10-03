@@ -25,7 +25,12 @@ struct CompileCommand;
 
 namespace clangd {
 
-/// Provides compilation arguments used for building ClangdUnit.
+class Logger;
+
+/// Returns a default compile command to use for \p File.
+tooling::CompileCommand getDefaultCompileCommand(PathRef File);
+
+/// Provides compilation arguments used for parsing C and C++ files.
 class GlobalCompilationDatabase {
 public:
   virtual ~GlobalCompilationDatabase() = default;
@@ -42,17 +47,31 @@ public:
 class DirectoryBasedGlobalCompilationDatabase
     : public GlobalCompilationDatabase {
 public:
+  DirectoryBasedGlobalCompilationDatabase(
+      clangd::Logger &Logger, llvm::Optional<Path> CompileCommandsDir);
+
   std::vector<tooling::CompileCommand>
   getCompileCommands(PathRef File) override;
 
+  void setExtraFlagsForFile(PathRef File, std::vector<std::string> ExtraFlags);
+
 private:
   tooling::CompilationDatabase *getCompilationDatabase(PathRef File);
+  tooling::CompilationDatabase *tryLoadDatabaseFromPath(PathRef File);
 
   std::mutex Mutex;
   /// Caches compilation databases loaded from directories(keys are
   /// directories).
   llvm::StringMap<std::unique_ptr<clang::tooling::CompilationDatabase>>
       CompilationDatabases;
+
+  /// Stores extra flags per file.
+  llvm::StringMap<std::vector<std::string>> ExtraFlagsForFile;
+  /// Used for logging.
+  clangd::Logger &Logger;
+  /// Used for command argument pointing to folder where compile_commands.json
+  /// is located.
+  llvm::Optional<Path> CompileCommandsDir;
 };
 } // namespace clangd
 } // namespace clang
