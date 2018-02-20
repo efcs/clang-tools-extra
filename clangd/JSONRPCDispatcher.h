@@ -10,10 +10,13 @@
 #ifndef LLVM_CLANG_TOOLS_EXTRA_CLANGD_JSONRPCDISPATCHER_H
 #define LLVM_CLANG_TOOLS_EXTRA_CLANGD_JSONRPCDISPATCHER_H
 
+#include "JSONExpr.h"
 #include "Logger.h"
+#include "Protocol.h"
+#include "Trace.h"
 #include "clang/Basic/LLVM.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Support/YAMLParser.h"
 #include <iosfwd>
 #include <mutex>
 
@@ -23,62 +26,74 @@ namespace clangd {
 /// Encapsulates output and logs streams and provides thread-safe access to
 /// them.
 class JSONOutput : public Logger {
+  // FIXME(ibiryukov): figure out if we can shrink the public interface of
+  // JSONOutput now that we pass Context everywhere.
 public:
-  JSONOutput(llvm::raw_ostream &Outs, llvm::raw_ostream &Logs)
-      : Outs(Outs), Logs(Logs) {}
+  JSONOutput(llvm::raw_ostream &Outs, llvm::raw_ostream &Logs,
+             llvm::raw_ostream *InputMirror = nullptr, bool Pretty = false)
+      : Pretty(Pretty), Outs(Outs), Logs(Logs), InputMirror(InputMirror) {}
 
   /// Emit a JSONRPC message.
-  void writeMessage(const Twine &Message);
+  void writeMessage(const json::Expr &Result);
 
-  /// Write to the logging stream.
+  /// Write a line to the logging stream.
   void log(const Twine &Message) override;
+
+  /// Mirror \p Message into InputMirror stream. Does nothing if InputMirror is
+  /// null.
+  /// Unlike other methods of JSONOutput, mirrorInput is not thread-safe.
+  void mirrorInput(const Twine &Message);
+
+  // Whether output should be pretty-printed.
+  const bool Pretty;
 
 private:
   llvm::raw_ostream &Outs;
   llvm::raw_ostream &Logs;
+  llvm::raw_ostream *InputMirror;
 
   std::mutex StreamMutex;
 };
 
-/// Callback for messages sent to the server, called by the JSONRPCDispatcher.
-class Handler {
-public:
-  Handler(JSONOutput &Output) : Output(Output) {}
-  virtual ~Handler() = default;
-
-  /// Called when the server receives a method call. This is supposed to return
-  /// a result on Outs. The default implementation returns an "unknown method"
-  /// error to the client and logs a warning.
-  virtual void handleMethod(llvm::yaml::MappingNode *Params, StringRef ID);
-  /// Called when the server receives a notification. No result should be
-  /// written to Outs. The default implemetation logs a warning.
-  virtual void handleNotification(llvm::yaml::MappingNode *Params);
-
-protected:
-  JSONOutput &Output;
-
-  /// Helper to write a JSONRPC result to Output.
-  void writeMessage(const Twine &Message) { Output.writeMessage(Message); }
-};
+/// Sends a successful reply.
+/// Current context must derive from JSONRPCDispatcher::Handler.
+void reply(json::Expr &&Result);
+/// Sends an error response to the client, and logs it.
+/// Current context must derive from JSONRPCDispatcher::Handler.
+void replyError(ErrorCode code, const llvm::StringRef &Message);
+/// Sends a request to the client.
+/// Current context must derive from JSONRPCDispatcher::Handler.
+void call(llvm::StringRef Method, json::Expr &&Params);
 
 /// Main JSONRPC entry point. This parses the JSONRPC "header" and calls the
 /// registered Handler for the method received.
 class JSONRPCDispatcher {
 public:
+  // A handler responds to requests for a particular method name.
+  using Handler = std::function<void(const json::Expr &)>;
+
   /// Create a new JSONRPCDispatcher. UnknownHandler is called when an unknown
   /// method is received.
-  JSONRPCDispatcher(std::unique_ptr<Handler> UnknownHandler)
+  JSONRPCDispatcher(Handler UnknownHandler)
       : UnknownHandler(std::move(UnknownHandler)) {}
 
   /// Registers a Handler for the specified Method.
-  void registerHandler(StringRef Method, std::unique_ptr<Handler> H);
+  void registerHandler(StringRef Method, Handler H);
 
   /// Parses a JSONRPC message and calls the Handler for it.
-  bool call(StringRef Content) const;
+  bool call(const json::Expr &Message, JSONOutput &Out) const;
 
 private:
-  llvm::StringMap<std::unique_ptr<Handler>> Handlers;
-  std::unique_ptr<Handler> UnknownHandler;
+  llvm::StringMap<Handler> Handlers;
+  Handler UnknownHandler;
+};
+
+/// Controls the way JSON-RPC messages are encoded (both input and output).
+enum JSONStreamStyle {
+  /// Encoding per the LSP specification, with mandatory Content-Length header.
+  Standard,
+  /// Messages are delimited by a '---' line. Comment lines start with #.
+  Delimited
 };
 
 /// Parses input queries from LSP client (coming from \p In) and runs call
@@ -88,6 +103,7 @@ private:
 /// Input stream(\p In) must be opened in binary mode to avoid preliminary
 /// replacements of \r\n with \n.
 void runLanguageServerLoop(std::istream &In, JSONOutput &Out,
+                           JSONStreamStyle InputStyle,
                            JSONRPCDispatcher &Dispatcher, bool &IsDone);
 
 } // namespace clangd

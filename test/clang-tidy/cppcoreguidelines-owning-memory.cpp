@@ -54,7 +54,7 @@ unique_ptr<int *> returns_no_owner5() {
 }
 
 /// FIXME: CSA finds it, but the report is misleading. Ownersemantics can catch this
-/// by flow analysis similar to misc-use-after-move.
+/// by flow analysis similar to bugprone-use-after-move.
 void csa_not_finding_leak() {
   gsl::owner<int *> o1 = new int(42); // Ok
 
@@ -142,11 +142,13 @@ void test_deletion() {
   // CHECK-MESSAGES: [[@LINE-1]]:3: warning: initializing non-owner 'int *' with a newly created 'gsl::owner<>'
   delete unowned_int1; // BAD, since no owner
   // CHECK-MESSAGES: [[@LINE-1]]:3: warning: deleting a pointer through a type that is not marked 'gsl::owner<>'; consider using a smart pointer instead
+  // CHECK-MESSAGES: [[@LINE-4]]:3: note: variable declared here
 
   int *unowned_int2 = new int[42]; // BAD, since new creates and owner
   // CHECK-MESSAGES: [[@LINE-1]]:3: warning: initializing non-owner 'int *' with a newly created 'gsl::owner<>'
   delete[] unowned_int2; // BAD since no owner
   // CHECK-MESSAGES: [[@LINE-1]]:3: warning: deleting a pointer through a type that is not marked 'gsl::owner<>'; consider using a smart pointer instead
+  // CHECK-MESSAGES: [[@LINE-4]]:3: note: variable declared here
 
   delete new int(42);   // Technically ok, but stupid
   delete[] new int[42]; // Technically ok, but stupid

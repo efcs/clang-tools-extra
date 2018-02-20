@@ -18,6 +18,7 @@
 #include "../ClangTidy.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/TargetSelect.h"
 
 using namespace clang::ast_matchers;
 using namespace clang::driver;
@@ -208,6 +209,13 @@ options are specified.
                            cl::init(false),
                            cl::cat(ClangTidyCategory));
 
+static cl::opt<std::string> VfsOverlay("vfsoverlay", cl::desc(R"(
+Overlay the virtual filesystem described by file
+over the real file system.
+)"),
+                                       cl::value_desc("filename"),
+                                       cl::cat(ClangTidyCategory));
+
 namespace clang {
 namespace tidy {
 
@@ -329,6 +337,30 @@ static std::unique_ptr<ClangTidyOptionsProvider> createOptionsProvider() {
                                                 OverrideOptions);
 }
 
+llvm::IntrusiveRefCntPtr<vfs::FileSystem>
+getVfsOverlayFromFile(const std::string &OverlayFile) {
+  llvm::IntrusiveRefCntPtr<vfs::OverlayFileSystem> OverlayFS(
+      new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
+      OverlayFS->getBufferForFile(OverlayFile);
+  if (!Buffer) {
+    llvm::errs() << "Can't load virtual filesystem overlay file '"
+                 << OverlayFile << "': " << Buffer.getError().message()
+                 << ".\n";
+    return nullptr;
+  }
+
+  IntrusiveRefCntPtr<vfs::FileSystem> FS = vfs::getVFSFromYAML(
+      std::move(Buffer.get()), /*DiagHandler*/ nullptr, OverlayFile);
+  if (!FS) {
+    llvm::errs() << "Error: invalid virtual filesystem overlay file '"
+                 << OverlayFile << "'.\n";
+    return nullptr;
+  }
+  OverlayFS->pushOverlay(FS);
+  return OverlayFS;
+}
+
 static int clangTidyMain(int argc, const char **argv) {
   CommonOptionsParser OptionsParser(argc, argv, ClangTidyCategory,
                                     cl::ZeroOrMore);
@@ -400,11 +432,20 @@ static int clangTidyMain(int argc, const char **argv) {
     llvm::cl::PrintHelpMessage(/*Hidden=*/false, /*Categorized=*/true);
     return 0;
   }
+  llvm::IntrusiveRefCntPtr<vfs::FileSystem> BaseFS(
+      VfsOverlay.empty() ? vfs::getRealFileSystem()
+                         : getVfsOverlayFromFile(VfsOverlay));
+  if (!BaseFS)
+    return 1;
 
   ProfileData Profile;
 
+  llvm::InitializeAllTargetInfos();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+
   ClangTidyContext Context(std::move(OwningOptionsProvider));
-  runClangTidy(Context, OptionsParser.getCompilations(), PathList,
+  runClangTidy(Context, OptionsParser.getCompilations(), PathList, BaseFS,
                EnableCheckProfile ? &Profile : nullptr);
   ArrayRef<ClangTidyError> Errors = Context.getErrors();
   bool FoundErrors =
@@ -417,7 +458,8 @@ static int clangTidyMain(int argc, const char **argv) {
   unsigned WErrorCount = 0;
 
   // -fix-errors implies -fix.
-  handleErrors(Context, (FixErrors || Fix) && !DisableFixes, WErrorCount);
+  handleErrors(Context, (FixErrors || Fix) && !DisableFixes, WErrorCount,
+               BaseFS);
 
   if (!ExportFixes.empty() && !Errors.empty()) {
     std::error_code EC;
@@ -483,6 +525,11 @@ static int LLVM_ATTRIBUTE_UNUSED LibcxxModuleAnchorDestination =
     LibcxxModuleAnchorSource;
 
 // This anchor is used to force the linker to link the GoogleModule.
+extern volatile int FuchsiaModuleAnchorSource;
+static int LLVM_ATTRIBUTE_UNUSED FuchsiaModuleAnchorDestination =
+    FuchsiaModuleAnchorSource;
+
+// This anchor is used to force the linker to link the GoogleModule.
 extern volatile int GoogleModuleAnchorSource;
 static int LLVM_ATTRIBUTE_UNUSED GoogleModuleAnchorDestination =
     GoogleModuleAnchorSource;
@@ -516,6 +563,11 @@ static int LLVM_ATTRIBUTE_UNUSED PerformanceModuleAnchorDestination =
 extern volatile int ReadabilityModuleAnchorSource;
 static int LLVM_ATTRIBUTE_UNUSED ReadabilityModuleAnchorDestination =
     ReadabilityModuleAnchorSource;
+
+// This anchor is used to force the linker to link the ObjCModule.
+extern volatile int ObjCModuleAnchorSource;
+static int LLVM_ATTRIBUTE_UNUSED ObjCModuleAnchorDestination =
+    ObjCModuleAnchorSource;
 
 // This anchor is used to force the linker to link the HICPPModule.
 extern volatile int HICPPModuleAnchorSource;
