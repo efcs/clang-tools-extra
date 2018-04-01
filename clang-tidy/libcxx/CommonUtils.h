@@ -38,21 +38,19 @@ namespace libcxx {
 ///
 /// usingDecl(hasAnyUsingShadowDecl(hasTargetDecl(isFromStdNamespace())))
 /// matches "using std::vector" and "using ns::list".
+AST_MATCHER(Decl, isFromStdNamespace) {
+  const DeclContext *D = Node.getDeclContext();
 
-inline bool IsFromStdNamespace(const Decl *Dec) {
-  const DeclContext *D = Dec->getCanonicalDecl()->getDeclContext();
-  D = D->getEnclosingNamespaceContext();
-  if (!D)
-    return false;
-  while (D->isInlineNamespace() ||
-         (D->getParent() && D->getParent()->isNamespace()))
+  while (D->isInlineNamespace())
     D = D->getParent();
+
   if (!D->isNamespace() || !D->getParent()->isTranslationUnit())
     return false;
+
   const IdentifierInfo *Info = cast<NamespaceDecl>(D)->getIdentifier();
+
   return (Info && Info->isStr("std"));
 }
-AST_MATCHER(NamedDecl, isFromStdNamespace) { return IsFromStdNamespace(&Node); }
 
 inline bool hasReservedName(const NamedDecl *D) {
   const IdentifierInfo *Info = D->getIdentifier();
