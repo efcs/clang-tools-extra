@@ -15,35 +15,25 @@ namespace clang {
 namespace clangd {
 namespace {
 
-const CanonicalIncludes *canonicalIncludesForSystemHeaders() {
-  static const auto *Includes = [] {
-    auto *I = new CanonicalIncludes();
-    addSystemHeadersMapping(I);
-    return I;
-  }();
-  return Includes;
-}
-
 /// Retrieves namespace and class level symbols in \p Decls.
 std::unique_ptr<SymbolSlab> indexAST(ASTContext &Ctx,
                                      std::shared_ptr<Preprocessor> PP,
                                      llvm::ArrayRef<const Decl *> Decls) {
   SymbolCollector::Options CollectorOpts;
-  // Although we do not index symbols in main files (e.g. cpp file), information
-  // in main files like definition locations of class declarations will still be
-  // collected; thus, the index works for go-to-definition.
-  // FIXME(ioeric): handle IWYU pragma for dynamic index. We might want to make
-  // SymbolCollector always provides include canonicalization (e.g. IWYU, STL).
-  // FIXME(ioeric): get rid of `IndexMainFiles` as this is always set to false.
-  CollectorOpts.IndexMainFiles = false;
-  CollectorOpts.CollectIncludePath = true;
-  CollectorOpts.Includes = canonicalIncludesForSystemHeaders();
+  // FIXME(ioeric): we might also want to collect include headers. We would need
+  // to make sure all includes are canonicalized (with CanonicalIncludes), which
+  // is not trivial given the current way of collecting symbols: we only have
+  // AST at this point, but we also need preprocessor callbacks (e.g.
+  // CommentHandler for IWYU pragma) to canonicalize includes.
+  CollectorOpts.CollectIncludePath = false;
+  CollectorOpts.CountReferences = false;
 
   auto Collector = std::make_shared<SymbolCollector>(std::move(CollectorOpts));
   Collector->setPreprocessor(std::move(PP));
   index::IndexingOptions IndexOpts;
+  // We only need declarations, because we don't count references.
   IndexOpts.SystemSymbolFilter =
-      index::IndexingOptions::SystemSymbolFilterKind::All;
+      index::IndexingOptions::SystemSymbolFilterKind::DeclarationsOnly;
   IndexOpts.IndexFunctionLocals = false;
 
   index::indexTopLevelDecls(Ctx, Decls, Collector, IndexOpts);
@@ -101,6 +91,12 @@ bool FileIndex::fuzzyFind(
     const FuzzyFindRequest &Req,
     llvm::function_ref<void(const Symbol &)> Callback) const {
   return Index.fuzzyFind(Req, Callback);
+}
+
+void FileIndex::lookup(
+    const LookupRequest &Req,
+    llvm::function_ref<void(const Symbol &)> Callback) const {
+  Index.lookup(Req, Callback);
 }
 
 } // namespace clangd
