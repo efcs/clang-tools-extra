@@ -102,6 +102,7 @@ static void getRangeCorrect(SourceManager &SM, SourceRange &Range) {
 }
 
 void useTrailingSpace(SourceManager &SM, SourceLocation Loc, std::string &Str) {
+  bool Invalid;
   const char *TextAfter =
       SM.getCharacterData(Loc.getLocWithOffset(1), &Invalid);
   if (Invalid)
@@ -126,8 +127,8 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     bool Res = hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc);
     if (Res && !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
-      CharSourceRange Range(ArgLoc, true);
-      SourceRange SRange = Range.getAsRange();
+      SourceRange SRange(MacroLoc, ArgLoc);
+      assert(SRange.isValid());
       getRangeCorrect(SM, SRange);
 
       diag(ArgLoc, "visibility declaration occurs does not occur on first "
