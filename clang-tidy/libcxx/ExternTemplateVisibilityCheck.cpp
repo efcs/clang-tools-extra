@@ -108,7 +108,7 @@ void useTrailingSpace(SourceManager &SM, SourceLocation Loc, std::string &Str) {
   if (Invalid)
     return;
 
-  if (*TextAfter == '\n')
+  if (*TextAfter != '\n')
     Str += "\n";
 }
 
@@ -127,7 +127,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     bool Res = hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc);
     if (Res && !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
-      SourceRange Range(ArgLoc, true);
+      CharSourceRange Range(ArgLoc, true);
       CharSourceRange RRange = SM.getExpansionRange(ArgLoc);
       SourceRange SRange = RRange.getAsRange();
 
