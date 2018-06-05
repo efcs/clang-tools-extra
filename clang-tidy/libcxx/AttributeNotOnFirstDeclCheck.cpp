@@ -87,24 +87,22 @@ void AttributeNotOnFirstDeclCheck::check(const MatchFinder::MatchResult &Result)
     return;
   auto &SM = *Result.SourceManager;
   auto &Context = *Result.Context;
-  SourceLocation ArgLoc, MacroLoc;
-  StringRef Name;
-  if (!getMacroAndArgLocations(SM, Context, VS->getLocation(), ArgLoc, MacroLoc, Name))
+  MacroInfo Info;
+  if (!getMacroAndArgLocations(SM, Context, VS->getLocation(), Info))
     return;
-  std::string NamePlus = Name;
+  std::string NamePlus = Info.Name;
   NamePlus += ' ';
-  Name = NamePlus;
-  assert(Name.size() > 1);
+  Info.Name = NamePlus;
+  assert(Info.Name.size() > 1);
   if (FixItLoc.isValid()) {
     if (!First->hasAttr<VisibilityAttr>()) {
       diag(FD->getLocation(), "function %0 was declared without attribute")
-          << FD
-          << FixItHint::CreateInsertion(FixItLoc, Name)
-          << FixItHint::CreateRemoval(ArgLoc);
+          << FD << FixItHint::CreateInsertion(FixItLoc, Info.Name)
+          << FixItHint::CreateRemoval(Info.ArgLoc);
     } else {
-      diag(FD->getLocation(), "function %0 was declared with duplicate attribute")
-          << FD
-          << FixItHint::CreateRemoval(ArgLoc);
+      diag(FD->getLocation(),
+           "function %0 was declared with duplicate attribute")
+          << FD << FixItHint::CreateRemoval(Info.ArgLoc);
     }
     diag(First->getLocation(), "first declared here", DiagnosticIDs::Note)
           << First->getSourceRange();

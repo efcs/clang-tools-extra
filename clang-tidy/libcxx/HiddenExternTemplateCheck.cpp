@@ -59,18 +59,20 @@ void HiddenExternTemplateCheck::performFixIt(FunctionDecl *FD,
     auto *VS = FD->getAttr<VisibilityAttr>();
     if (!VS)
       return;
-    SourceLocation MacroLoc, ArgLoc;
-    StringRef Name;
-    if (!getMacroAndArgLocations(SM, Context, VS->getLocation(), ArgLoc, MacroLoc, Name))
+    MacroInfo Info;
+    if (!getMacroAndArgLocations(SM, Context, VS->getLocation(), Info))
       return;
-    if (Name != "_LIBCPP_INLINE_VISIBILITY" && Name != "_LIBCPP_ALWAYS_INLINE" && Name != "HIDDEN")
+    if (Info.Name != "_LIBCPP_INLINE_VISIBILITY" &&
+        Info.Name != "_LIBCPP_ALWAYS_INLINE" && Info.Name != "HIDDEN")
       return;
 
-    assert(ArgLoc.isValid());
-    CharSourceRange Range(ArgLoc, true);
-    diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
+    assert(Info.ExpansionRange.isValid());
+    diag(Info.ExpansionRange.getBegin(),
+         "function %0 is explicitly instantiated and hidden")
         << FD
-        << FixItHint::CreateReplacement(Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+        << FixItHint::CreateReplacement(
+               Info.ExpansionRange,
+               "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
 }
 
 void HiddenExternTemplateCheck::check(const MatchFinder::MatchResult &Result) {

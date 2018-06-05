@@ -117,9 +117,15 @@ AST_MATCHER(DeclRefExpr, declRefIsAllowableReservedName) {
   return IsAllowableReservedName(VD);
 }
 
+struct MacroInfo {
+  SourceLocation ArgLoc;
+  SourceLocation MacroLoc;
+  CharSourceRange ExpansionRange;
+  StringRef Name;
+};
+
 bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
-                             SourceLocation Loc, SourceLocation &ArgLoc,
-                             SourceLocation &MacroLoc, StringRef &Name);
+                             SourceLocation Loc, MacroInfo &Info);
 
 bool isInLibcxxHeaderFile(const SourceManager &SM, const Decl *D);
 

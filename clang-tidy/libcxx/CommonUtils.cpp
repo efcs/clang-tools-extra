@@ -25,37 +25,39 @@ bool IsFromStdNamespace(const Decl *Dcl) {
 }
 
 bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
-                             SourceLocation Loc, SourceLocation &ArgLoc,
-                             SourceLocation &MacroLoc, StringRef &Name) {
+                             SourceLocation Loc, MacroInfo &Info) {
   assert(Loc.isMacroID() && "Only reasonble to call this on macros");
-
-  ArgLoc = Loc;
+  Info = MacroInfo{};
+  Info.ArgLoc = Loc;
 
   // Find the location of the immediate macro expansion.
   while (true) {
-    std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(ArgLoc);
+    std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(Info.ArgLoc);
     const SrcMgr::SLocEntry *E = &SM.getSLocEntry(LocInfo.first);
     const SrcMgr::ExpansionInfo &Expansion = E->getExpansion();
 
-    SourceLocation OldArgLoc = ArgLoc;
-    ArgLoc = Expansion.getExpansionLocStart();
-    MacroLoc = Expansion.getExpansionLocEnd();
-    if (!Expansion.isMacroArgExpansion()) {
-      Name = Lexer::getImmediateMacroName(OldArgLoc, SM, Context.getLangOpts());
+    SourceLocation OldArgLoc = Info.ArgLoc;
+    Info.ArgLoc = Expansion.getExpansionLocStart();
+    Info.MacroLoc = Expansion.getExpansionLocEnd();
+    Info.ExpansionRange = Expansion.getExpansionLocRange();
 
+    if (!Expansion.isMacroArgExpansion()) {
+      Info.Name =
+          Lexer::getImmediateMacroName(OldArgLoc, SM, Context.getLangOpts());
       return true;
     }
 
-    MacroLoc = SM.getExpansionRange(ArgLoc).getBegin();
+    Info.MacroLoc = SM.getExpansionRange(Info.ArgLoc).getBegin();
+    Info.ArgLoc = Expansion.getSpellingLoc().getLocWithOffset(LocInfo.second);
+    Info.ExpansionRange = Expansion.getExpansionLocRange();
 
-    ArgLoc = Expansion.getSpellingLoc().getLocWithOffset(LocInfo.second);
-    if (ArgLoc.isFileID())
+    if (Info.ArgLoc.isFileID())
       return true;
 
     // If spelling location resides in the same FileID as macro expansion
     // location, it means there is no inner macro.
-    FileID MacroFID = SM.getFileID(MacroLoc);
-    if (SM.isInFileID(ArgLoc, MacroFID)) {
+    FileID MacroFID = SM.getFileID(Info.MacroLoc);
+    if (SM.isInFileID(Info.ArgLoc, MacroFID)) {
       // Don't transform this case. If the characters that caused the
       // null-conversion come from within a macro, they can't be changed.
       return false;

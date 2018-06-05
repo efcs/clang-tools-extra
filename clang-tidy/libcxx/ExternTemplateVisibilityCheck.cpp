@@ -30,19 +30,17 @@ AST_POLYMORPHIC_MATCHER(
 }
 
 static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
-                           StringRef &Name, SourceLocation &MacroLoc,
-                           SourceLocation &ArgLoc) {
+                           MacroInfo &Info) {
   if (!FD)
     return false;
 
   SourceManager &SM = Context.getSourceManager();
   auto isMatchingMacro = [&](const Attr *A) {
-    if (!getMacroAndArgLocations(SM, Context, A->getLocation(), ArgLoc,
-                                 MacroLoc, Name))
+    if (!getMacroAndArgLocations(SM, Context, A->getLocation(), Info))
       return false;
 
-    if (Name == "_LIBCPP_INLINE_VISIBILITY" ||
-        Name == "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY")
+    if (Info.Name == "_LIBCPP_INLINE_VISIBILITY" ||
+        Info.Name == "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY")
       return true;
     return false;
   };
@@ -69,6 +67,8 @@ static SourceRange getWhitespaceCorrectRange(SourceManager &SM,
   bool Invalid = false;
   const char *TextAfter =
       SM.getCharacterData(Range.getEnd().getLocWithOffset(1), &Invalid);
+  std::string After(TextAfter, 25);
+  llvm::errs() << "TextAfter = '" << After << "'\n";
   if (Invalid)
     return Range;
   unsigned Offset = std::strspn(TextAfter, " \t\r\n");
@@ -100,15 +100,14 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   // If this isn't the first declaration, remove any present visibility
   // attributes. We'll insert them on the first declaration below.
   if (FD->getPreviousDecl() != FD) {
-    StringRef Name;
-    SourceLocation MacroLoc, ArgLoc;
-    if (hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc) &&
-        !FD->isFirstDecl()) {
-      assert(ArgLoc.isValid());
-      SourceRange Range = getWhitespaceCorrectRange(
-          SM, SM.getExpansionRange(ArgLoc).getAsRange());
-      diag(ArgLoc, "visibility declaration does not occur on the first "
-                   "declaration of %0")
+    MacroInfo Info;
+    if (hasLibcxxMacro(Context, FD, Info) && !FD->isFirstDecl()) {
+      assert(Info.ExpansionRange.isValid());
+      SourceRange Range =
+          getWhitespaceCorrectRange(SM, Info.ExpansionRange.getAsRange());
+      diag(Range.getBegin(),
+           "visibility declaration does not occur on the first "
+           "declaration of %0")
           << FD << FixItHint::CreateRemoval(Range);
     }
   }
@@ -134,9 +133,8 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   // but this isn't true for destructors, whose addresses are required when
   // destructing global variables.
   if (!isa<CXXDestructorDecl>(FD)) {
-    StringRef Name;
-    SourceLocation MacroLoc, ArgLoc;
-    bool Res = hasLibcxxMacro(Context, First, Name, MacroLoc, ArgLoc);
+    MacroInfo Info;
+    bool Res = hasLibcxxMacro(Context, First, Info);
     // If there is no visibility attribute on the first declaration, insert
     // the correct one.
     if (!Res) {
@@ -149,13 +147,15 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     }
     // If we have a visibility attribute, but it's not what we expect, replace
     // it with the expected attribute.
-    else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
-      assert(ArgLoc.isValid());
-      CharSourceRange Range(ArgLoc, true);
-      diag(ArgLoc, "function %0 has incorrect visibility declaration '%1'")
-          << Name << First
+    else if (Res && Info.Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
+      assert(Info.ExpansionRange.isValid());
+
+      diag(Info.ExpansionRange.getBegin(),
+           "function %0 has incorrect visibility declaration '%1'")
+          << Info.Name << First
           << FixItHint::CreateReplacement(
-                 Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+                 Info.ExpansionRange,
+                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
   }
 }
