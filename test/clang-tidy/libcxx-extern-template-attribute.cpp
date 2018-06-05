@@ -1,12 +1,13 @@
 // RUN: %check_clang_tidy %s libcxx-extern-template %t
 
 #define _LIBCPP_INLINE_VISIBILITY __attribute__((__always_inline__))
-
+#define _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY __attribute__((__always_inline__))
 namespace std {
 template <class T>
 struct Foo {
   void bar();
   void baz();
+  void foobar();
   template <class U>
   void dummy1();
   template <class U>
@@ -20,6 +21,9 @@ _LIBCPP_INLINE_VISIBILITY void Foo<T>::bar() {
 template <class T>
 void Foo<T>::baz() {
 }
+
+template <class T>
+_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void Foo<T>::foobar() {}
 
 template <class T>
 template <class U>

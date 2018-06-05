@@ -86,12 +86,15 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
+  const FunctionDecl *Templ = FD->getTemplateInstantiationPattern();
   StringRef FoundName;
   {
-    if (!FD->isInlineSpecified()) {
-      diag(FD->getInnerLocStart(), "function %0 is missing inline")
-          << FD
-          << FixItHint::CreateInsertion(FD->getInnerLocStart(), "inline ");
+    if (!Templ->isInlineSpecified()) {
+      SourceLocation Loc = FD->getInnerLocStart();
+
+      diag(Loc, "function %0 is missing inline")
+          << FD << FD->getSourceRange()
+          << FixItHint::CreateInsertion(Loc, "inline ");
     }
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
@@ -100,30 +103,30 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
       CharSourceRange Range(ArgLoc, true);
       if (FoundName != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
         diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
-            << FD
+            << FD << FD->getSourceRange()
             << FixItHint::CreateReplacement(
                    Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
       }
     } else {
-      diag(FD->getInnerLocStart(), "function %0 is missing declaration")
-          << FD
+      diag(FD->getLocStart(), "function %0 is missing declaration")
+          << FD << FD->getSourceRange()
           << FixItHint::CreateInsertion(
                  FD->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
     }
   }
   {
-    const FunctionDecl *Parent = FD->getTemplateInstantiationPattern();
-    assert(Parent && Parent != FD);
-    Parent = Parent->getCanonicalDecl();
-    assert(Parent && Parent != FD);
+
+    assert(Templ);
+    const FunctionDecl *Parent = Templ->getCanonicalDecl();
+    assert(Parent && Parent != FD && Parent != Templ);
 
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
     if (!Res) {
       diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
-          << Parent
+          << Parent << Parent->getSourceRange()
           << FixItHint::CreateInsertion(
                  Parent->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
@@ -131,7 +134,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     } else if (Name.data() && Name != FoundName) {
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "incorrect macro name %0")
-          << Name
+          << Name << Parent->getSourceRange()
           << FixItHint::CreateReplacement(
                  Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
