@@ -90,16 +90,16 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
       this);
 }
 
-static void getRangeCorrect(SourceManager &SM, SourceRange &Range) {
+static SourceRange getWhitespaceCorrectRange(SourceManager &SM,
+                                             SourceRange Range) {
   // FIXME(EricWF): Remove leading whitespace when removing a token.
   bool Invalid = false;
   const char *TextAfter =
       SM.getCharacterData(Range.getEnd().getLocWithOffset(1), &Invalid);
   if (Invalid)
-    return;
+    return Range;
   unsigned Offset = std::strspn(TextAfter, " \t\r\n");
-  Range =
-      SourceRange(Range.getBegin(), Range.getEnd().getLocWithOffset(Offset));
+  return SourceRange(Range.getBegin(), Range.getEnd().getLocWithOffset(Offset));
 }
 
 void useTrailingSpace(SourceManager &SM, SourceLocation Loc, std::string &Str) {
@@ -122,27 +122,29 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   bool IsInlineDef = MD && MD->hasInlineBody();
   bool IsDtor = isa<CXXDestructorDecl>(FD);
 
+  // If this isn't the first declaration, remove any present visibility
+  // attributes. We'll insert them on the first declaration below.
   if (FD->getPreviousDecl() != FD) {
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
-    bool Res = hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc);
-    if (Res && !FD->isFirstDecl()) {
+    if (hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc) &&
+        !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
-      CharSourceRange Range(ArgLoc, true);
-      CharSourceRange RRange = SM.getExpansionRange(ArgLoc);
-      SourceRange SRange = RRange.getAsRange();
-
-      getRangeCorrect(SM, SRange);
-
+      SourceRange Range = getWhitespaceCorrectRange(
+          SM, SM.getExpansionRange(ArgLoc).getAsRange());
       diag(ArgLoc, "visibility declaration occurs does not occur on first "
                    "declaration of %0")
-          << FD << FD->getSourceRange() << FixItHint::CreateRemoval(SRange);
+          << FD << FixItHint::CreateRemoval(Range);
     }
   }
 
+  // Get the first declaration for the function. This should contain the
+  // inline specification as well as the required visibility attributes.
   const FunctionDecl *Parent = FD->getFirstDecl();
   assert(Parent);
 
+  // If the function isn't specified inline, either implicitly or explicitly,
+  // then insert 'inline' on the first declaration.
   if (!Parent->isInlineSpecified() && !IsInlineDef) {
     SourceLocation Loc = Parent->getInnerLocStart();
     std::string Text = "inline";
@@ -152,10 +154,16 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
         << FixItHint::CreateInsertion(Loc, Text.c_str(), true);
   }
 
-  if (!IsDtor) {
+  // Don't mess with visibility declarations on destructors. Libc++ expects
+  // externally instantiated definitions cannot have their addresses taken,
+  // but this isn't true for destructors, whose addresses are required when
+  // destructing global variables.
+  if (!isa<CXXDestructorDecl>(FD)) {
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
+    // If there is no visibility attribute on the first declaration, insert
+    // the correct one.
     if (!Res) {
       diag(Parent->getInnerLocStart(),
            "function %0 is missing visibility declaration")
@@ -163,7 +171,10 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
           << FixItHint::CreateInsertion(
                  Parent->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
-    } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
+    }
+    // If we have a visibility attribute, but it's not what we expect, replace
+    // it with the expected attribute.
+    else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "function %0 has incorrect visibility declaration '%1'")
@@ -176,12 +187,8 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
 void ExternTemplateVisibilityCheck::check(
     const MatchFinder::MatchResult &Result) {
-  // FIXME: Add callback implementation.
-  const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("func");
-
-  auto &SM = *Result.SourceManager;
-  auto &Context = *Result.Context;
-  performFixIt(MatchedDecl, SM, Context);
+  performFixIt(Result.Nodes.getNodeAs<FunctionDecl>("func"),
+               *Result.SourceManager, *Result.Context);
 }
 
 } // namespace libcxx
