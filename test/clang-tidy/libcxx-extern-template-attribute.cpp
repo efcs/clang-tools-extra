@@ -5,12 +5,26 @@
 namespace std {
 template <class T>
 struct Foo {
+  // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'bar' is missing inline [libcxx-extern-template]
+  // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'bar' is missing visibility declaration [libcxx-extern-template]
   void bar();
+
+  // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'baz' is missing inline [libcxx-extern-template]
+  // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'baz' is missing visibility declaration [libcxx-extern-template]
   void baz();
+
+  // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'foobar' is missing inline [libcxx-extern-template]
+  // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'foobar' is missing visibility declaration [libcxx-extern-template]
   void foobar();
+
+  // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'bobo' is missing visibility declaration [libcxx-extern-template]
   void bobo() {}
+
+  // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'bababa' is missing inline [libcxx-extern-template]
+  // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'bababa' is missing visibility declaration [libcxx-extern-template]
   void bababa();
 
+  // CHECK-MESSAGES-NOT: dummy
   template <class U>
   void dummy1() {}
   template <class U>
@@ -45,6 +59,5 @@ template struct Foo<int>;
 
 } // namespace std
 
-// CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: waaoeu
 // CHECK-FIXES: {{^}}HIDDEN void f();{{$}}
 // CHECK-FIXES: {{^}}void f() {}
