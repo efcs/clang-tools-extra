@@ -11,6 +11,7 @@
 #include "../ClangTidyModule.h"
 #include "../ClangTidyModuleRegistry.h"
 #include "AttributeNotOnFirstDeclCheck.h"
+#include "ExternTemplateVisibilityCheck.h"
 #include "HiddenExternTemplateCheck.h"
 #include "ReservedNamesCheck.h"
 #include "TemplateMissingInlineCheck.h"
@@ -33,6 +34,8 @@ public:
         "libcxx-reserved-names");
     CheckFactories.registerCheck<TemplateMissingInlineCheck>(
         "libcxx-template-missing-inline");
+    CheckFactories.registerCheck<ExternTemplateVisibilityCheck>(
+        "libcxx-extern-template");
   }
 
   ClangTidyOptions getModuleOptions() override {

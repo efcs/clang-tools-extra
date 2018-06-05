@@ -39,7 +39,7 @@ bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
       return true;
     }
 
-    MacroLoc = SM.getExpansionRange(ArgLoc).first;
+    MacroLoc = SM.getExpansionRange(ArgLoc).getBegin();
 
     ArgLoc = Expansion.getSpellingLoc().getLocWithOffset(LocInfo.second);
     if (ArgLoc.isFileID())

@@ -18,6 +18,20 @@ namespace clang {
 namespace tidy {
 namespace libcxx {
 
+inline bool IsFromStdNamespace(const Decl *Dcl) {
+  const DeclContext *D = Dcl->getDeclContext();
+
+  while (D->isInlineNamespace())
+    D = D->getParent();
+
+  if (!D->isNamespace() || !D->getParent()->isTranslationUnit())
+    return false;
+
+  const IdentifierInfo *Info = cast<NamespaceDecl>(D)->getIdentifier();
+
+  return (Info && Info->isStr("std"));
+}
+
 /// Matches declarations whose declaration context is the C++ standard library
 /// namespace std.
 ///
