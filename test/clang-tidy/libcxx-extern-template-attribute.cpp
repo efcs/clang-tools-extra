@@ -65,10 +65,12 @@ template <class T>
 inline _LIBCPP_INLINE_VISIBILITY void Foo<T>::bababa() {}
 // CHECK-FIXES:{{^}}inline void Foo<T>::bababa() {}
 
-
 template <class T>
 template <class U>
 void Foo<T>::dummy2() {}
+// CHECK-FIXES: template <class T>
+// CHECK-FIXES-NEXT: template <class U>
+// CHECK-FIXES-NEXT:{{^}}void Foo<T>::dummy2() {}
 
 template struct Foo<int>;
 
