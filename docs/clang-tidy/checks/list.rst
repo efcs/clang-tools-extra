@@ -17,6 +17,7 @@ Clang-Tidy Checks
    android-cloexec-memfd-create
    android-cloexec-open
    android-cloexec-socket
+   android-comparison-in-temp-failure-retry
    boost-use-to-string
    bugprone-argument-comment
    bugprone-assert-side-effect
@@ -36,6 +37,7 @@ Clang-Tidy Checks
    bugprone-misplaced-widening-cast
    bugprone-move-forwarding-reference
    bugprone-multiple-statement-macro
+   bugprone-parent-virtual-call
    bugprone-sizeof-container
    bugprone-sizeof-expression
    bugprone-string-constructor
@@ -47,6 +49,7 @@ Clang-Tidy Checks
    bugprone-suspicious-semicolon
    bugprone-suspicious-string-compare
    bugprone-swapped-arguments
+   bugprone-terminating-continue
    bugprone-throw-keyword-missing
    bugprone-undefined-memory-manipulation
    bugprone-undelegated-constructor
@@ -75,6 +78,7 @@ Clang-Tidy Checks
    cppcoreguidelines-avoid-goto
    cppcoreguidelines-c-copy-assignment-signature (redirects to misc-unconventional-assign-operator) <cppcoreguidelines-c-copy-assignment-signature>
    cppcoreguidelines-interfaces-global-init
+   cppcoreguidelines-narrowing-conversions
    cppcoreguidelines-no-malloc
    cppcoreguidelines-owning-memory
    cppcoreguidelines-pro-bounds-array-to-pointer-decay
@@ -89,9 +93,11 @@ Clang-Tidy Checks
    cppcoreguidelines-pro-type-vararg
    cppcoreguidelines-slicing
    cppcoreguidelines-special-member-functions
+   fuchsia-header-anon-namespaces (redirects to google-build-namespaces) <fuchsia-header-anon-namespaces>
    fuchsia-default-arguments
    fuchsia-multiple-inheritance
    fuchsia-overloaded-operator
+   fuchsia-restrict-system-includes
    fuchsia-statically-constructed-objects
    fuchsia-trailing-return
    fuchsia-virtual-inheritance
@@ -110,7 +116,6 @@ Clang-Tidy Checks
    google-readability-redundant-smartptr-get (redirects to readability-redundant-smartptr-get) <google-readability-redundant-smartptr-get>
    google-readability-todo
    google-runtime-int
-   google-runtime-member-string-references
    google-runtime-operator
    google-runtime-references
    hicpp-avoid-goto
@@ -223,6 +228,7 @@ Clang-Tidy Checks
    readability-redundant-string-cstr
    readability-redundant-string-init
    readability-simplify-boolean-expr
+   readability-simplify-subscript-expr
    readability-static-accessed-through-instance
    readability-static-definition-in-anonymous-namespace
    readability-string-compare

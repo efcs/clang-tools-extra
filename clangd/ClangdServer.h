@@ -70,6 +70,9 @@ public:
     /// If 0, all requests are processed on the calling thread.
     unsigned AsyncThreadsCount = getDefaultAsyncThreadsCount();
 
+    /// AST caching policy. The default is to keep up to 3 ASTs in memory.
+    ASTRetentionPolicy RetentionPolicy;
+
     /// Cached preambles are potentially large. If false, store them on disk.
     bool StorePreamblesInMemory = true;
 
@@ -155,7 +158,12 @@ public:
                               Callback<std::vector<DocumentHighlight>> CB);
 
   /// Get code hover for a given position.
-  void findHover(PathRef File, Position Pos, Callback<Hover> CB);
+  void findHover(PathRef File, Position Pos,
+                 Callback<llvm::Optional<Hover>> CB);
+
+  /// Retrieve the top symbols from the workspace matching a query.
+  void workspaceSymbols(StringRef Query, int Limit,
+                        Callback<std::vector<SymbolInformation>> CB);
 
   /// Run formatting for \p Rng inside \p File with content \p Code.
   llvm::Expected<tooling::Replacements> formatRange(StringRef Code,
@@ -174,22 +182,6 @@ public:
   /// \p NewName.
   void rename(PathRef File, Position Pos, llvm::StringRef NewName,
               Callback<std::vector<tooling::Replacement>> CB);
-
-  /// Inserts a new #include into \p File, if it's not present in \p Code.
-  ///
-  /// \p DeclaringHeader The original header corresponding to this insertion
-  /// e.g. the header that declared a symbol. This can be either a URI or a
-  /// literal string quoted with <> or "" that can be #included directly.
-  /// \p InsertedHeader The preferred header to be inserted. This may be
-  /// different from \p DeclaringHeader as a header file can have a different
-  /// canonical include. This can be either a URI or a literal string quoted
-  /// with <> or "" that can be #included directly.
-  ///
-  /// Both OriginalHeader and InsertedHeader will be considered to determine
-  /// whether an include needs to be added.
-  Expected<tooling::Replacements> insertInclude(PathRef File, StringRef Code,
-                                                StringRef DeclaringHeader,
-                                                StringRef InsertedHeader);
 
   /// Only for testing purposes.
   /// Waits until all requests to worker thread are finished and dumps AST for

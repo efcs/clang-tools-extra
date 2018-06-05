@@ -10,6 +10,7 @@
 #include "../ClangTidy.h"
 #include "../ClangTidyModule.h"
 #include "../ClangTidyModuleRegistry.h"
+#include "../cppcoreguidelines/NarrowingConversionsCheck.h"
 #include "ArgumentCommentCheck.h"
 #include "AssertSideEffectCheck.h"
 #include "BoolPointerImplicitConversionCheck.h"
@@ -28,6 +29,7 @@
 #include "MisplacedWideningCastCheck.h"
 #include "MoveForwardingReferenceCheck.h"
 #include "MultipleStatementMacroCheck.h"
+#include "ParentVirtualCallCheck.h"
 #include "SizeofContainerCheck.h"
 #include "SizeofExpressionCheck.h"
 #include "StringConstructorCheck.h"
@@ -39,6 +41,7 @@
 #include "SuspiciousSemicolonCheck.h"
 #include "SuspiciousStringCompareCheck.h"
 #include "SwappedArgumentsCheck.h"
+#include "TerminatingContinueCheck.h"
 #include "ThrowKeywordMissingCheck.h"
 #include "UndefinedMemoryManipulationCheck.h"
 #include "UndelegatedConstructorCheck.h"
@@ -90,6 +93,10 @@ public:
         "bugprone-move-forwarding-reference");
     CheckFactories.registerCheck<MultipleStatementMacroCheck>(
         "bugprone-multiple-statement-macro");
+    CheckFactories.registerCheck<cppcoreguidelines::NarrowingConversionsCheck>(
+        "bugprone-narrowing-conversions");
+    CheckFactories.registerCheck<ParentVirtualCallCheck>(
+        "bugprone-parent-virtual-call");
     CheckFactories.registerCheck<SizeofContainerCheck>(
         "bugprone-sizeof-container");
     CheckFactories.registerCheck<SizeofExpressionCheck>(
@@ -112,6 +119,8 @@ public:
         "bugprone-suspicious-string-compare");
     CheckFactories.registerCheck<SwappedArgumentsCheck>(
         "bugprone-swapped-arguments");
+    CheckFactories.registerCheck<TerminatingContinueCheck>(
+        "bugprone-terminating-continue");
     CheckFactories.registerCheck<ThrowKeywordMissingCheck>(
         "bugprone-throw-keyword-missing");
     CheckFactories.registerCheck<UndefinedMemoryManipulationCheck>(

@@ -9,10 +9,8 @@
 
 #include "Annotations.h"
 #include "ClangdUnit.h"
-#include "TestFS.h"
-#include "clang/Frontend/CompilerInvocation.h"
-#include "clang/Frontend/PCHContainerOperations.h"
-#include "clang/Frontend/Utils.h"
+#include "SourceCode.h"
+#include "TestTU.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -33,24 +31,6 @@ testing::Matcher<const Diag &> WithFix(testing::Matcher<Fix> FixMatcher) {
 
 testing::Matcher<const Diag &> WithNote(testing::Matcher<Note> NoteMatcher) {
   return Field(&Diag::Notes, ElementsAre(NoteMatcher));
-}
-
-// FIXME: this is duplicated with FileIndexTests. Share it.
-ParsedAST build(StringRef Code, std::vector<const char *> Flags = {}) {
-  std::vector<const char *> Cmd = {"clang", "main.cpp"};
-  Cmd.insert(Cmd.begin() + 1, Flags.begin(), Flags.end());
-  auto CI = createInvocationFromCommandLine(Cmd);
-  auto Buf = MemoryBuffer::getMemBuffer(Code);
-  auto AST = ParsedAST::Build(std::move(CI), nullptr, std::move(Buf),
-                              std::make_shared<PCHContainerOperations>(),
-                              vfs::getRealFileSystem());
-  assert(AST.hasValue());
-  return std::move(*AST);
-}
-
-std::vector<Diag> buildDiags(llvm::StringRef Code,
-                             std::vector<const char *> Flags = {}) {
-  return build(Code, std::move(Flags)).getDiagnostics();
 }
 
 MATCHER_P2(Diag, Range, Message,
@@ -92,14 +72,6 @@ Position pos(int line, int character) {
   return Res;
 }
 
-/// Matches diagnostic that has exactly one fix with the same range and message
-/// as the diagnostic itself.
-testing::Matcher<const clangd::Diag &> DiagWithEqualFix(clangd::Range Range,
-                                                        std::string Replacement,
-                                                        std::string Message) {
-  return AllOf(Diag(Range, Message), WithFix(Fix(Range, Replacement, Message)));
-}
-
 TEST(DiagnosticsTest, DiagnosticRanges) {
   // Check we report correct ranges, including various edge-cases.
   Annotations Test(R"cpp(
@@ -111,31 +83,34 @@ o]]();
       $unk[[unknown]]();
     }
   )cpp");
-  llvm::errs() << Test.code();
   EXPECT_THAT(
-      buildDiags(Test.code()),
+      TestTU::withCode(Test.code()).build().getDiagnostics(),
       ElementsAre(
           // This range spans lines.
-          AllOf(DiagWithEqualFix(
-                    Test.range("typo"), "foo",
-                    "use of undeclared identifier 'goo'; did you mean 'foo'?"),
+          AllOf(Diag(Test.range("typo"),
+                     "use of undeclared identifier 'goo'; did you mean 'foo'?"),
+                WithFix(
+                    Fix(Test.range("typo"), "foo", "change 'go\\ o' to 'foo'")),
                 // This is a pretty normal range.
                 WithNote(Diag(Test.range("decl"), "'foo' declared here"))),
           // This range is zero-width, and at the end of a line.
-          DiagWithEqualFix(Test.range("semicolon"), ";",
-                           "expected ';' after expression"),
+          AllOf(Diag(Test.range("semicolon"), "expected ';' after expression"),
+                WithFix(Fix(Test.range("semicolon"), ";", "insert ';'"))),
           // This range isn't provided by clang, we expand to the token.
           Diag(Test.range("unk"), "use of undeclared identifier 'unknown'")));
 }
 
 TEST(DiagnosticsTest, FlagsMatter) {
   Annotations Test("[[void]] main() {}");
-  EXPECT_THAT(buildDiags(Test.code()),
-              ElementsAre(DiagWithEqualFix(Test.range(), "int",
-                                           "'main' must return 'int'")));
+  auto TU = TestTU::withCode(Test.code());
+  EXPECT_THAT(TU.build().getDiagnostics(),
+              ElementsAre(AllOf(Diag(Test.range(), "'main' must return 'int'"),
+                                WithFix(Fix(Test.range(), "int",
+                                            "change 'void' to 'int'")))));
   // Same code built as C gets different diagnostics.
+  TU.Filename = "Plain.c";
   EXPECT_THAT(
-      buildDiags(Test.code(), {"-x", "c"}),
+      TU.build().getDiagnostics(),
       ElementsAre(AllOf(
           Diag(Test.range(), "return type of 'main' is not 'int'"),
           WithFix(Fix(Test.range(), "int", "change return type to 'int'")))));
@@ -156,7 +131,7 @@ TEST(DiagnosticsTest, Preprocessor) {
     #endif
     )cpp");
   EXPECT_THAT(
-      buildDiags(Test.code()),
+      TestTU::withCode(Test.code()).build().getDiagnostics(),
       ElementsAre(Diag(Test.range(), "use of undeclared identifier 'b'")));
 }
 
@@ -221,6 +196,28 @@ main.cpp:2:3: error: something terrible happened)");
       LSPDiags,
       ElementsAre(Pair(EqualToLSPDiag(MainLSP), ElementsAre(EqualToFix(F))),
                   Pair(EqualToLSPDiag(NoteInMainLSP), IsEmpty())));
+}
+
+TEST(ClangdUnitTest, GetBeginningOfIdentifier) {
+  // First ^ is the expected beginning, last is the search position.
+  for (const char *Text : {
+           "int ^f^oo();", // inside identifier
+           "int ^foo();",  // beginning of identifier
+           "int ^foo^();", // end of identifier
+           "int foo(^);",  // non-identifier
+           "^int foo();",  // beginning of file (can't back up)
+           "int ^f0^0();", // after a digit (lexing at N-1 is wrong)
+           "int ^λλ^λ();", // UTF-8 handled properly when backing up
+       }) {
+    Annotations TestCase(Text);
+    auto AST = TestTU::withCode(TestCase.code()).build();
+    const auto &SourceMgr = AST.getASTContext().getSourceManager();
+    SourceLocation Actual = getBeginningOfIdentifier(
+        AST, TestCase.points().back(), SourceMgr.getMainFileID());
+    Position ActualPos =
+        offsetToPosition(TestCase.code(), SourceMgr.getFileOffset(Actual));
+    EXPECT_EQ(TestCase.points().front(), ActualPos) << Text;
+  }
 }
 
 } // namespace
