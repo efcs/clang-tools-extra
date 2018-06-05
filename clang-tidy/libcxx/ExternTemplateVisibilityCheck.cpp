@@ -131,6 +131,13 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
           << FixItHint::CreateInsertion(
                  Parent->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
+    } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
+      assert(ArgLoc.isValid());
+      CharSourceRange Range(ArgLoc, true);
+      diag(ArgLoc, "incorrect macro '%0'")
+          << Name
+          << FixItHint::CreateReplacement(
+                 Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
   }
 }
