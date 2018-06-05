@@ -24,7 +24,8 @@ AST_MATCHER(FunctionDecl, dummyMatcher) { return true; }
 
 AST_MATCHER(FunctionDecl, isDefiningDecl) {
   const FunctionDecl *FD = &Node;
-  const FunctionDecl *Def = nullptr;
+  const FunctionDecl *Body = nullptr;
+  return (FD->hasBody(Body) && Body == FD);
   FD = FD->getTemplateInstantiationPattern();
   if (!FD)
     return false;
@@ -81,8 +82,8 @@ AST_POLYMORPHIC_MATCHER(hasLibcxxVisibilityMacro,
 void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
   Finder->addMatcher(
-      functionDecl(allOf(dummyMatcher(), isFromStdNamespace(),
-                         isExplicitInstantiation(), isDefiningDecl()))
+      functionDecl(allOf(isFromStdNamespace(), isExplicitInstantiation(),
+                         isDefiningDecl()))
           .bind("func"),
       this);
 }
@@ -90,6 +91,7 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
+  const FunctionDecl *OrigFD = FD;
   FD = FD->getTemplateInstantiationPattern();
   const auto *MD = dyn_cast<CXXMethodDecl>(FD);
   bool IsInlineDef = MD && MD->hasInlineBody();
@@ -97,18 +99,19 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   {
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
-    if (Res && !FD->isThisDeclarationADefinition()) {
+    if (Res && !FD->getDeclContext()->isRecord()) {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
           << FD << FD->getSourceRange() << FixItHint::CreateRemoval(Range);
     }
-    if (!FD->isInlineSpecified() && !IsInlineDef) {
-      SourceLocation Loc = FD->getInnerLocStart();
-      diag(Loc, "function %0 is missing inline")
-          << FD << FD->getSourceRange()
-          << FixItHint::CreateInsertion(Loc, "inline ", true);
-    }
+  }
+
+  if (!FD->isInlineSpecified() && !IsInlineDef) {
+    SourceLocation Loc = FD->getInnerLocStart();
+    diag(Loc, "function %0 is missing inline")
+        << FD << FD->getSourceRange()
+        << FixItHint::CreateInsertion(Loc, "inline ", true);
   }
   {
 
