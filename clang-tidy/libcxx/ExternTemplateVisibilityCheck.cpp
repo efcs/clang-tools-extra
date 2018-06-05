@@ -20,18 +20,6 @@ namespace clang {
 namespace tidy {
 namespace libcxx {
 
-AST_MATCHER(FunctionDecl, dummyMatcher) { return true; }
-
-AST_MATCHER(FunctionDecl, isDefiningDecl) {
-  const FunctionDecl *FD = &Node;
-  const FunctionDecl *Body = nullptr;
-  return (FD->hasBody(Body) && Body == FD);
-  FD = FD->getTemplateInstantiationPattern();
-  if (!FD)
-    return false;
-  return FD->isThisDeclarationADefinition();
-}
-
 AST_POLYMORPHIC_MATCHER(
     isExplicitInstantiation,
     AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl, VarDecl, CXXRecordDecl,
@@ -67,25 +55,10 @@ static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
   return false;
 }
 
-AST_POLYMORPHIC_MATCHER(hasLibcxxVisibilityMacro,
-                        AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl,
-
-                                                        CXXMethodDecl)) {
-
-  auto *Fn = dyn_cast<FunctionDecl>(&Node);
-  // Fn = Fn->getTemplateInstantiationPattern();
-  if (!Fn)
-    return false;
-  StringRef Name;
-  SourceLocation MacroLoc, ArgLoc;
-  return hasLibcxxMacro(Finder->getASTContext(), Fn, Name, MacroLoc, ArgLoc);
-}
-
 void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
-  // FIXME: Add matchers.
   Finder->addMatcher(
       functionDecl(allOf(isFromStdNamespace(), isExplicitInstantiation(),
-                         isDefiningDecl()))
+                         isDefinition()))
           .bind("func"),
       this);
 }
@@ -102,25 +75,27 @@ static SourceRange getWhitespaceCorrectRange(SourceManager &SM,
   return SourceRange(Range.getBegin(), Range.getEnd().getLocWithOffset(Offset));
 }
 
-void useTrailingSpace(SourceManager &SM, SourceLocation Loc, std::string &Str) {
+std::string useTrailingSpace(SourceManager &SM, SourceLocation Loc,
+                             StringRef Str) {
+  std::string Res = Str.data();
+
   bool Invalid;
   const char *TextAfter =
       SM.getCharacterData(Loc.getLocWithOffset(1), &Invalid);
-  if (Invalid)
-    return;
 
-  if (*TextAfter != '\n')
-    Str += " ";
+  if (!Invalid && *TextAfter != '\n')
+    Res += " ";
+  return Res;
 }
 
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
   FD = FD->getTemplateInstantiationPattern();
+  assert(FD && "expected externally instantiated template");
 
-  const auto *MD = dyn_cast<CXXMethodDecl>(FD);
-  bool IsInlineDef = MD && MD->hasInlineBody();
-  bool IsDtor = isa<CXXDestructorDecl>(FD);
+  bool IsInlineDef =
+      isa<CXXMethodDecl>(FD) && cast<CXXMethodDecl>(FD)->hasInlineBody();
 
   // If this isn't the first declaration, remove any present visibility
   // attributes. We'll insert them on the first declaration below.
@@ -132,7 +107,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
       assert(ArgLoc.isValid());
       SourceRange Range = getWhitespaceCorrectRange(
           SM, SM.getExpansionRange(ArgLoc).getAsRange());
-      diag(ArgLoc, "visibility declaration occurs does not occur on first "
+      diag(ArgLoc, "visibility declaration does not occur on the first "
                    "declaration of %0")
           << FD << FixItHint::CreateRemoval(Range);
     }
@@ -140,17 +115,17 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
   // Get the first declaration for the function. This should contain the
   // inline specification as well as the required visibility attributes.
-  const FunctionDecl *Parent = FD->getFirstDecl();
-  assert(Parent);
+  const FunctionDecl *First = FD->getFirstDecl();
+  assert(First);
 
   // If the function isn't specified inline, either implicitly or explicitly,
   // then insert 'inline' on the first declaration.
-  if (!Parent->isInlineSpecified() && !IsInlineDef) {
-    SourceLocation Loc = Parent->getInnerLocStart();
+  if (!First->isInlineSpecified() && !IsInlineDef) {
+    SourceLocation Loc = First->getInnerLocStart();
     std::string Text = "inline";
     useTrailingSpace(SM, Loc, Text);
     diag(Loc, "explicitly instantiated function %0 is missing inline")
-        << Parent << Parent->getSourceRange()
+        << First << First->getSourceRange()
         << FixItHint::CreateInsertion(Loc, Text.c_str(), true);
   }
 
@@ -161,15 +136,15 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   if (!isa<CXXDestructorDecl>(FD)) {
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
-    bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
+    bool Res = hasLibcxxMacro(Context, First, Name, MacroLoc, ArgLoc);
     // If there is no visibility attribute on the first declaration, insert
     // the correct one.
     if (!Res) {
-      diag(Parent->getInnerLocStart(),
+      diag(First->getInnerLocStart(),
            "function %0 is missing visibility declaration")
-          << Parent << Parent->getSourceRange()
+          << First << First->getSourceRange()
           << FixItHint::CreateInsertion(
-                 Parent->getInnerLocStart(),
+                 First->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
     }
     // If we have a visibility attribute, but it's not what we expect, replace
@@ -178,7 +153,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "function %0 has incorrect visibility declaration '%1'")
-          << Name << Parent
+          << Name << First
           << FixItHint::CreateReplacement(
                  Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
