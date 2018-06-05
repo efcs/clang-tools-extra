@@ -97,7 +97,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
   const auto *MD = dyn_cast<CXXMethodDecl>(FD);
   bool IsInlineDef = MD && MD->hasInlineBody();
-  bool IsDtor = isa < CXXDestructorDecl(FD);
+  bool IsDtor = isa<CXXDestructorDecl>(FD);
 
   if (FD->getPreviousDecl() != FD) {
     StringRef Name;
