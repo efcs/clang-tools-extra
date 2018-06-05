@@ -8,27 +8,32 @@ struct Foo {
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'bar' is missing inline [libcxx-extern-template]
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'bar' is missing visibility declaration [libcxx-extern-template]
   void bar();
+  // CHECK-FIXES: inline _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void bar();
 
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'baz' is missing inline [libcxx-extern-template]
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'baz' is missing visibility declaration [libcxx-extern-template]
   void baz();
+  // CHECK-FIXES: inline _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void baz();
 
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'foobar' is missing inline [libcxx-extern-template]
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'foobar' is missing visibility declaration [libcxx-extern-template]
   void foobar();
+  // CHECK-FIXES: inline _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void foobar();
 
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'bobo' is missing visibility declaration [libcxx-extern-template]
   void bobo() {}
+  // CHECK-FIXES:{{^}}  _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void bobo();
 
   // CHECK-MESSAGES: :[[@LINE-2]]:{{.*}}: warning: explicitly instantiated function 'bababa' is missing inline [libcxx-extern-template]
   // CHECK-MESSAGES: :[[@LINE-1]]:{{.*}}: warning: function 'bababa' is missing visibility declaration [libcxx-extern-template]
   void bababa();
+  // CHECK-FIXES: inline _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void bababa();
 
   // CHECK-MESSAGES-NOT: dummy
-  template <class U>
-  void dummy1() {}
-  template <class U>
-  void dummy2();
+  template <class U> void dummy1() {}
+  template <class U> void dummy2();
+  // CHECK-FIXES:{{^}}  template <class U> void dummy1() {}
+  // CHECK-FIXES:{{^}}  template <class U> void dummy2();
 
   ~Foo();
 };
