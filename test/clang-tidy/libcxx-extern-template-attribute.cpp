@@ -13,7 +13,12 @@ struct Foo {
   void dummy1() {}
   template <class U>
   void dummy2();
+
+  ~Foo();
 };
+
+template <class T>
+Foo<T>::~Foo() {}
 
 template <class T>
 _LIBCPP_INLINE_VISIBILITY void Foo<T>::bar() {

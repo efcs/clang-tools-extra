@@ -97,6 +97,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
   const auto *MD = dyn_cast<CXXMethodDecl>(FD);
   bool IsInlineDef = MD && MD->hasInlineBody();
+  bool IsDtor = isa < CXXDestructorDecl(FD);
 
   if (FD->getPreviousDecl() != FD) {
     StringRef Name;
@@ -120,22 +121,24 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
         << FixItHint::CreateInsertion(Loc, "inline ", true);
   }
 
-  StringRef Name;
-  SourceLocation MacroLoc, ArgLoc;
-  bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
-  if (!Res) {
-    diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
-        << Parent << Parent->getSourceRange()
-        << FixItHint::CreateInsertion(
-               Parent->getInnerLocStart(),
-               "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
-  } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
-    assert(ArgLoc.isValid());
-    CharSourceRange Range(ArgLoc, true);
-    diag(ArgLoc, "incorrect macro '%0'")
-        << Name
-        << FixItHint::CreateReplacement(
-               Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+  if (!IsDtor) {
+    StringRef Name;
+    SourceLocation MacroLoc, ArgLoc;
+    bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
+    if (!Res) {
+      diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
+          << Parent << Parent->getSourceRange()
+          << FixItHint::CreateInsertion(
+                 Parent->getInnerLocStart(),
+                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
+    } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
+      assert(ArgLoc.isValid());
+      CharSourceRange Range(ArgLoc, true);
+      diag(ArgLoc, "incorrect macro '%0'")
+          << Name
+          << FixItHint::CreateReplacement(
+                 Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+    }
   }
 }
 
