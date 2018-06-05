@@ -106,7 +106,8 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     if (Res && !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
-      diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
+      diag(ArgLoc, "visibility declaration occurs does not occur on first "
+                   "declaration of %0")
           << FD << FD->getSourceRange() << FixItHint::CreateRemoval(Range);
     }
   }
@@ -116,7 +117,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
   if (!Parent->isInlineSpecified() && !IsInlineDef) {
     SourceLocation Loc = Parent->getInnerLocStart();
-    diag(Loc, "function %0 is missing inline")
+    diag(Loc, "explicitly instantiated function %0 is missing inline")
         << Parent << Parent->getSourceRange()
         << FixItHint::CreateInsertion(Loc, "inline ", true);
   }
@@ -126,7 +127,8 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
     if (!Res) {
-      diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
+      diag(Parent->getInnerLocStart(),
+           "function %0 is missing visibility declaration")
           << Parent << Parent->getSourceRange()
           << FixItHint::CreateInsertion(
                  Parent->getInnerLocStart(),
@@ -134,8 +136,8 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
-      diag(ArgLoc, "incorrect macro '%0'")
-          << Name
+      diag(ArgLoc, "function %0 has incorrect visibility declaration '%1'")
+          << Name << Parent
           << FixItHint::CreateReplacement(
                  Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
