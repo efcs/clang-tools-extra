@@ -59,6 +59,8 @@ static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
     return false;
   };
   for (auto *A : FD->attrs()) {
+    if (A->isInherited())
+      continue;
     if (isMatchingMacro(A))
       return true;
   }
@@ -91,15 +93,16 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
-  const FunctionDecl *OrigFD = FD;
   FD = FD->getTemplateInstantiationPattern();
+
   const auto *MD = dyn_cast<CXXMethodDecl>(FD);
   bool IsInlineDef = MD && MD->hasInlineBody();
-  StringRef FoundName;
-  {
+
+  if (FD->getPreviousDecl() != FD) {
+    StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
-    bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
-    if (Res && !FD->getDeclContext()->isRecord()) {
+    bool Res = hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc);
+    if (Res && !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
@@ -133,14 +136,16 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
           << FixItHint::CreateInsertion(
                  Parent->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
-
-    } else if (Name.data() && Name != FoundName) {
+    }
+#if 0
+    else if (Name.data() && Name != FoundName) {
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "incorrect macro name %0")
           << Name << Parent->getSourceRange()
           << FixItHint::CreateReplacement(
                  Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
+#endif
   }
 }
 
