@@ -90,6 +90,17 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
       this);
 }
 
+static void getRangeCorrect(SourceManager &SM, SourceRange &Range) {
+  bool Invalid = false;
+  const char *TextAfter =
+      SM.getCharacterData(Range.getEnd().getLocWithOffset(1), &Invalid);
+  if (Invalid)
+    return;
+  unsigned Offset = std::strspn(TextAfter, " \t\r\n");
+  Range =
+      SourceRange(Range.getBegin(), Range.getEnd().getLocWithOffset(Offset));
+}
+
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
@@ -106,9 +117,12 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     if (Res && !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
+      SourceRange SRange = Range.getAsRange();
+      getRangeCorrect(SM, SRange);
+
       diag(ArgLoc, "visibility declaration occurs does not occur on first "
                    "declaration of %0")
-          << FD << FD->getSourceRange() << FixItHint::CreateRemoval(Range);
+          << FD << FD->getSourceRange() << FixItHint::CreateRemoval(SRange);
     }
   }
 
