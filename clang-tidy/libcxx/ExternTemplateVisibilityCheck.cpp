@@ -110,35 +110,31 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     }
   }
 
-  if (!FD->isInlineSpecified() && !IsInlineDef) {
-    SourceLocation Loc = FD->getInnerLocStart();
-    diag(Loc, "function %0 is missing inline")
-        << FD << FD->getSourceRange()
-        << FixItHint::CreateInsertion(Loc, "inline ", true);
+  const FunctionDecl *Parent = FD->getFirstDecl();
+
+  assert(Parent);
+  StringRef Name;
+  SourceLocation MacroLoc, ArgLoc;
+  bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
+  if (!Res) {
+    diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
+        << Parent << Parent->getSourceRange()
+        << FixItHint::CreateInsertion(
+               Parent->getInnerLocStart(),
+               "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
+  } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
+    assert(ArgLoc.isValid());
+    CharSourceRange Range(ArgLoc, true);
+    diag(ArgLoc, "incorrect macro '%0'")
+        << Name
+        << FixItHint::CreateReplacement(
+               Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
   }
-  {
-
-    const FunctionDecl *Parent = FD->getFirstDecl();
-
-    assert(Parent);
-
-    StringRef Name;
-    SourceLocation MacroLoc, ArgLoc;
-    bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
-    if (!Res) {
-      diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
-          << Parent << Parent->getSourceRange()
-          << FixItHint::CreateInsertion(
-                 Parent->getInnerLocStart(),
-                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
-    } else if (Res && Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
-      assert(ArgLoc.isValid());
-      CharSourceRange Range(ArgLoc, true);
-      diag(ArgLoc, "incorrect macro '%0'")
-          << Name
-          << FixItHint::CreateReplacement(
-                 Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
-    }
+  if (!Parent->isInlineSpecified() && !IsInlineDef) {
+    SourceLocation Loc = Parent->getInnerLocStart();
+    diag(Loc, "function %0 is missing inline")
+        << Parent << Parent->getSourceRange()
+        << FixItHint::CreateInsertion(Loc, "inline ", true);
   }
 }
 
