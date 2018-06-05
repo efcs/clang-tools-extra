@@ -91,6 +91,7 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
 }
 
 static void getRangeCorrect(SourceManager &SM, SourceRange &Range) {
+  // FIXME(EricWF): Remove leading whitespace when removing a token.
   bool Invalid = false;
   const char *TextAfter =
       SM.getCharacterData(Range.getEnd().getLocWithOffset(1), &Invalid);
