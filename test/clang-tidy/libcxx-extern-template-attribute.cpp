@@ -9,6 +9,7 @@ struct Foo {
   void baz();
   void foobar();
   void bobo() {}
+  void bababa();
 
   template <class U>
   void dummy1() {}
@@ -32,6 +33,9 @@ void Foo<T>::baz() {
 template <class T>
 _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY
 void Foo<T>::foobar() {}
+
+template <class T>
+inline _LIBCPP_INLINE_VISIBILITY void Foo<T>::bababa() {}
 
 template <class T>
 template <class U>
