@@ -9,6 +9,7 @@ struct Foo {
   void baz();
   void foobar();
   void bobo() {}
+
   template <class U>
   void dummy1() {}
   template <class U>

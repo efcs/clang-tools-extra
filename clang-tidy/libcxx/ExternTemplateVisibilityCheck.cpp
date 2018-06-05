@@ -101,6 +101,16 @@ static void getRangeCorrect(SourceManager &SM, SourceRange &Range) {
       SourceRange(Range.getBegin(), Range.getEnd().getLocWithOffset(Offset));
 }
 
+void useTrailingSpace(SourceManager &SM, SourceLocation Loc, std::string &Str) {
+  const char *TextAfter =
+      SM.getCharacterData(Loc.getLocWithOffset(1), &Invalid);
+  if (Invalid)
+    return;
+
+  if (*TextAfter == '\n')
+    Str += "\n";
+}
+
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
@@ -131,9 +141,11 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
   if (!Parent->isInlineSpecified() && !IsInlineDef) {
     SourceLocation Loc = Parent->getInnerLocStart();
+    std::string Text = "inline";
+    useTrailingSpace(SM, Loc, Text);
     diag(Loc, "explicitly instantiated function %0 is missing inline")
         << Parent << Parent->getSourceRange()
-        << FixItHint::CreateInsertion(Loc, "inline ", true);
+        << FixItHint::CreateInsertion(Loc, Text.c_str(), true);
   }
 
   if (!IsDtor) {
