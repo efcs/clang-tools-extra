@@ -97,7 +97,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   {
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
-    if (Res && FD->isThisDeclarationADefinition()) {
+    if (Res && !FD->isThisDeclarationADefinition()) {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
