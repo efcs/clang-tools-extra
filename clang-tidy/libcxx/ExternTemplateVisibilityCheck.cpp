@@ -111,8 +111,15 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   }
 
   const FunctionDecl *Parent = FD->getFirstDecl();
-
   assert(Parent);
+
+  if (!Parent->isInlineSpecified() && !IsInlineDef) {
+    SourceLocation Loc = Parent->getInnerLocStart();
+    diag(Loc, "function %0 is missing inline")
+        << Parent << Parent->getSourceRange()
+        << FixItHint::CreateInsertion(Loc, "inline ", true);
+  }
+
   StringRef Name;
   SourceLocation MacroLoc, ArgLoc;
   bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
@@ -129,12 +136,6 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
         << Name
         << FixItHint::CreateReplacement(
                Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
-  }
-  if (!Parent->isInlineSpecified() && !IsInlineDef) {
-    SourceLocation Loc = Parent->getInnerLocStart();
-    diag(Loc, "function %0 is missing inline")
-        << Parent << Parent->getSourceRange()
-        << FixItHint::CreateInsertion(Loc, "inline ", true);
   }
 }
 
