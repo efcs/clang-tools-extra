@@ -5,10 +5,10 @@
 namespace std {
 template <class T>
 struct Foo {
-  _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY inline void bar();
-  _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY inline void baz();
-  _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY inline void foobar();
-  _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void bobo() {}
+  void bar();
+  void baz();
+  void foobar();
+  void bobo() {}
   template <class U>
   void dummy1() {}
   template <class U>
@@ -16,7 +16,7 @@ struct Foo {
 };
 
 template <class T>
-void Foo<T>::bar() {
+_LIBCPP_INLINE_VISIBILITY void Foo<T>::bar() {
 }
 
 template <class T>
@@ -24,7 +24,7 @@ void Foo<T>::baz() {
 }
 
 template <class T>
-void Foo<T>::foobar() {}
+_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void Foo<T>::foobar() {}
 
 template <class T>
 template <class U>
