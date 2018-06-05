@@ -29,7 +29,8 @@ void Foo<T>::baz() {
 }
 
 template <class T>
-_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY void Foo<T>::foobar() {}
+_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY
+void Foo<T>::foobar() {}
 
 template <class T>
 template <class U>
