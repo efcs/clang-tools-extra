@@ -86,16 +86,11 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
-  const FunctionDecl *Templ = FD->getTemplateInstantiationPattern();
+  FD = FD->getTemplateInstantiationPattern();
+  const auto *MD = dyn_cast<CXXMethodDecl>(FD);
+  bool IsInlineDef = MD && MD->hasInlineBody();
   StringRef FoundName;
   {
-    if (!Templ->isInlineSpecified()) {
-      SourceLocation Loc = FD->getInnerLocStart();
-
-      diag(Loc, "function %0 is missing inline")
-          << FD << FD->getSourceRange()
-          << FixItHint::CreateInsertion(Loc, "inline ");
-    }
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
     if (Res) {
@@ -108,18 +103,29 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                    Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
       }
     } else {
-      diag(FD->getLocStart(), "function %0 is missing declaration")
+      diag(FD->getInnerLocStart(), "function %0 is missing declaration")
           << FD << FD->getSourceRange()
           << FixItHint::CreateInsertion(
                  FD->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
     }
+    if (!FD->isInlineSpecified() && !IsInlineDef) {
+      SourceLocation Loc = FD->getInnerLocStart();
+      diag(Loc, "function %0 is missing inline")
+          << FD << FD->getSourceRange()
+          << FixItHint::CreateInsertion(Loc, "inline ", true);
+    }
   }
   {
 
-    assert(Templ);
-    const FunctionDecl *Parent = Templ->getCanonicalDecl();
-    assert(Parent && Parent != FD && Parent != Templ);
+    const FunctionDecl *Parent = FD->getCanonicalDecl();
+    assert(Parent);
+    if (FD == Parent || IsInlineDef) {
+
+      // assert(!isa<CXXMethodDecl>(Templ));
+      return;
+    }
+    assert(Parent && Parent != FD);
 
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
@@ -145,8 +151,6 @@ void ExternTemplateVisibilityCheck::check(
     const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
   const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("func");
-
-  auto *Fn = MatchedDecl->getTemplateInstantiationPattern();
 
   auto &SM = *Result.SourceManager;
   auto &Context = *Result.Context;
