@@ -17,6 +17,13 @@ namespace clang {
 namespace tidy {
 namespace libcxx {
 
+bool IsFromStdNamespace(const Decl *Dcl) {
+  const DeclContext *D = Dcl->getDeclContext();
+  while (D->isRecord())
+    D = D->getParent();
+  return D->isStdNamespace();
+}
+
 bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
                              SourceLocation Loc, SourceLocation &ArgLoc,
                              SourceLocation &MacroLoc, StringRef &Name) {

@@ -28,7 +28,8 @@ public:
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
 
-  void performFixIt(FunctionDecl *FD, SourceManager &SM, ASTContext &Context);
+  void performFixIt(const FunctionDecl *FD, SourceManager &SM,
+                    ASTContext &Context);
 };
 
 } // namespace libcxx

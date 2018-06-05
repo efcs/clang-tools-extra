@@ -18,19 +18,7 @@ namespace clang {
 namespace tidy {
 namespace libcxx {
 
-inline bool IsFromStdNamespace(const Decl *Dcl) {
-  const DeclContext *D = Dcl->getDeclContext();
-
-  while (D->isInlineNamespace())
-    D = D->getParent();
-
-  if (!D->isNamespace() || !D->getParent()->isTranslationUnit())
-    return false;
-
-  const IdentifierInfo *Info = cast<NamespaceDecl>(D)->getIdentifier();
-
-  return (Info && Info->isStr("std"));
-}
+bool IsFromStdNamespace(const Decl *Dcl);
 
 /// Matches declarations whose declaration context is the C++ standard library
 /// namespace std.
@@ -52,19 +40,7 @@ inline bool IsFromStdNamespace(const Decl *Dcl) {
 ///
 /// usingDecl(hasAnyUsingShadowDecl(hasTargetDecl(isFromStdNamespace())))
 /// matches "using std::vector" and "using ns::list".
-AST_MATCHER(Decl, isFromStdNamespace) {
-  const DeclContext *D = Node.getDeclContext();
-
-  while (D->isInlineNamespace())
-    D = D->getParent();
-
-  if (!D->isNamespace() || !D->getParent()->isTranslationUnit())
-    return false;
-
-  const IdentifierInfo *Info = cast<NamespaceDecl>(D)->getIdentifier();
-
-  return (Info && Info->isStr("std"));
-}
+AST_MATCHER(Decl, isFromStdNamespace) { return IsFromStdNamespace(&Node); }
 
 inline bool hasReservedName(const NamedDecl *D) {
   const IdentifierInfo *Info = D->getIdentifier();

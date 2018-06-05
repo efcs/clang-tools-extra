@@ -20,58 +20,99 @@ namespace clang {
 namespace tidy {
 namespace libcxx {
 
+AST_MATCHER(FunctionDecl, dummyMatcher) { return true; }
+
+AST_MATCHER(FunctionDecl, isRedeclaration) {
+  const FunctionDecl *FD = &Node;
+  const FunctionDecl *Def = nullptr;
+  return (FD->hasBody(Def) && Def == FD && FD->getCanonicalDecl() != FD);
+#if 0
+  if (auto *FD = dyn_cast<FunctionDecl>(&Node)) {
+    if (FD->isTemplateInstantiation())
+      return false;
+    return FD->
+    auto TSK = FD->getTemplateSpecializationKind();
+    if (TSK == TSK_ExplicitInstantiationDefinition
+            || TSK == TSK_ExplicitInstantiationDeclaration)
+      return false;
+    auto *NewFD = FD->getCanonicalDecl();
+    if (NewFD == FD)
+      return false;
+    TSK = NewFD->getTemplateSpecializationKind();
+    if (TSK == TSK_ExplicitInstantiationDefinition
+            || TSK == TSK_ExplicitInstantiationDeclaration)
+      return false;
+    return true;
+  }
+  return false;
+#endif
+}
+
 AST_POLYMORPHIC_MATCHER(
     isExplicitInstantiation,
     AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl, VarDecl, CXXRecordDecl,
                                     ClassTemplateSpecializationDecl)) {
+
   return (Node.getTemplateSpecializationKind() ==
               TSK_ExplicitInstantiationDeclaration ||
           Node.getTemplateSpecializationKind() ==
               TSK_ExplicitInstantiationDefinition);
 }
 
-AST_POLYMORPHIC_MATCHER(hasHiddenVisibility,
-                        AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl,
-                                                        CXXMethodDecl)) {
-  auto *Fn = dyn_cast<FunctionDecl>(&Node);
-  Fn = Fn->getTemplateInstantiationPattern();
-  if (!Fn)
+static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
+                           StringRef &Name, SourceLocation &MacroLoc,
+                           SourceLocation &ArgLoc) {
+  if (!FD)
     return false;
-  if (auto *VS = Fn->template getAttr<VisibilityAttr>())
-    if (VS->getVisibility() == VisibilityAttr::Hidden)
-      return true;
 
-  for (auto *RD : Fn->redecls()) {
-    if (auto *VS = RD->template getAttr<VisibilityAttr>()) {
-      if (VS->getVisibility() == VisibilityAttr::Hidden)
-        return true;
-    }
+  SourceManager &SM = Context.getSourceManager();
+  auto isMatchingMacro = [&](const Attr *A) {
+    if (!getMacroAndArgLocations(SM, Context, A->getLocation(), ArgLoc,
+                                 MacroLoc, Name))
+      return false;
+
+    if (Name == "_LIBCPP_INLINE_VISIBILITY" ||
+        Name == "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY")
+      return true;
+    return false;
+  };
+  for (auto *A : FD->attrs()) {
+    if (isMatchingMacro(A))
+      return true;
   }
   return false;
+}
+
+AST_POLYMORPHIC_MATCHER(hasLibcxxVisibilityMacro,
+                        AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl,
+
+                                                        CXXMethodDecl)) {
+
+  auto *Fn = dyn_cast<FunctionDecl>(&Node);
+  // Fn = Fn->getTemplateInstantiationPattern();
+  if (!Fn)
+    return false;
+  StringRef Name;
+  SourceLocation MacroLoc, ArgLoc;
+  return hasLibcxxMacro(Finder->getASTContext(), Fn, Name, MacroLoc, ArgLoc);
 }
 
 void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
   Finder->addMatcher(
-      functionDecl(isExplicitInstantiation(), hasHiddenVisibility())
+      functionDecl(allOf(dummyMatcher(), isFromStdNamespace(),
+                         hasLibcxxVisibilityMacro(), isRedeclaration()))
           .bind("func"),
       this);
 }
 
-void ExternTemplateVisibilityCheck::performFixIt(FunctionDecl *FD,
+void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
-  auto *VS = FD->getAttr<VisibilityAttr>();
-  if (!VS)
-    return;
-  SourceLocation MacroLoc, ArgLoc;
   StringRef Name;
-  if (!getMacroAndArgLocations(SM, Context, VS->getLocation(), ArgLoc, MacroLoc,
-                               Name))
-    return;
-  if (Name != "_LIBCPP_INLINE_VISIBILITY" && Name != "_LIBCPP_ALWAYS_INLINE" &&
-      Name != "HIDDEN")
-    return;
+  SourceLocation MacroLoc, ArgLoc;
+  bool Res = hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc);
+  assert(Res);
 
   assert(ArgLoc.isValid());
   CharSourceRange Range(ArgLoc, true);
@@ -85,15 +126,14 @@ void ExternTemplateVisibilityCheck::check(
     const MatchFinder::MatchResult &Result) {
   // FIXME: Add callback implementation.
   const auto *MatchedDecl = Result.Nodes.getNodeAs<FunctionDecl>("func");
+  MatchedDecl->dumpColor();
+  llvm::errs() << MatchedDecl->getTemplateSpecializationKind() << "\n";
+
   auto *Fn = MatchedDecl->getTemplateInstantiationPattern();
 
   auto &SM = *Result.SourceManager;
   auto &Context = *Result.Context;
-
-  performFixIt(Fn, SM, Context);
-  for (FunctionDecl *RD : Fn->redecls()) {
-    performFixIt(RD, SM, Context);
-  }
+  performFixIt(MatchedDecl, SM, Context);
 }
 
 } // namespace libcxx
