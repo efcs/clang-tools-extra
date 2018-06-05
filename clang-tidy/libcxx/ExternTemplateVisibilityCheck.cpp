@@ -127,8 +127,10 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     bool Res = hasLibcxxMacro(Context, FD, Name, MacroLoc, ArgLoc);
     if (Res && !FD->isFirstDecl()) {
       assert(ArgLoc.isValid());
-      SourceRange SRange(MacroLoc, ArgLoc);
-      assert(SRange.isValid());
+      SourceRange Range(ArgLoc, true);
+      CharSourceRange RRange = SM.getExpansionRange(ArgLoc);
+      SourceRange SRange = RRange.getAsRange();
+
       getRangeCorrect(SM, SRange);
 
       diag(ArgLoc, "visibility declaration occurs does not occur on first "
