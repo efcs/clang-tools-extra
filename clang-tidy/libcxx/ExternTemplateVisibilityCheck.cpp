@@ -109,7 +109,7 @@ void useTrailingSpace(SourceManager &SM, SourceLocation Loc, std::string &Str) {
     return;
 
   if (*TextAfter != '\n')
-    Str += "\n";
+    Str += " ";
 }
 
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
