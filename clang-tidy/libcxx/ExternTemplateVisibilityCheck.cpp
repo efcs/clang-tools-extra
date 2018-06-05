@@ -22,10 +22,13 @@ namespace libcxx {
 
 AST_MATCHER(FunctionDecl, dummyMatcher) { return true; }
 
-AST_MATCHER(FunctionDecl, isRedeclaration) {
+AST_MATCHER(FunctionDecl, isDefiningDecl) {
   const FunctionDecl *FD = &Node;
   const FunctionDecl *Def = nullptr;
-  return (FD->hasBody(Def) && Def == FD && FD->getCanonicalDecl() != FD);
+  FD = FD->getTemplateInstantiationPattern();
+  if (!FD)
+    return false;
+  return FD->isThisDeclarationADefinition();
 }
 
 AST_POLYMORPHIC_MATCHER(
@@ -77,10 +80,11 @@ AST_POLYMORPHIC_MATCHER(hasLibcxxVisibilityMacro,
 
 void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(functionDecl(allOf(dummyMatcher(), isFromStdNamespace(),
-                                        isExplicitInstantiation()))
-                         .bind("func"),
-                     this);
+  Finder->addMatcher(
+      functionDecl(allOf(dummyMatcher(), isFromStdNamespace(),
+                         isExplicitInstantiation(), isDefiningDecl()))
+          .bind("func"),
+      this);
 }
 
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
@@ -93,21 +97,11 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   {
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
-    if (Res) {
+    if (Res && FD->isThisDeclarationADefinition()) {
       assert(ArgLoc.isValid());
       CharSourceRange Range(ArgLoc, true);
-      if (FoundName != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
-        diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
-            << FD << FD->getSourceRange()
-            << FixItHint::CreateReplacement(
-                   Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
-      }
-    } else {
-      diag(FD->getInnerLocStart(), "function %0 is missing declaration")
-          << FD << FD->getSourceRange()
-          << FixItHint::CreateInsertion(
-                 FD->getInnerLocStart(),
-                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
+      diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
+          << FD << FD->getSourceRange() << FixItHint::CreateRemoval(Range);
     }
     if (!FD->isInlineSpecified() && !IsInlineDef) {
       SourceLocation Loc = FD->getInnerLocStart();
@@ -120,7 +114,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
     const FunctionDecl *Parent = FD->getCanonicalDecl();
     assert(Parent);
-    if (FD == Parent || IsInlineDef) {
+    if (IsInlineDef) {
 
       // assert(!isa<CXXMethodDecl>(Templ));
       return;

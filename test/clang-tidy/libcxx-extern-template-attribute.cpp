@@ -9,7 +9,7 @@ struct Foo {
   void baz();
   void foobar();
   template <class U>
-  void dummy1();
+  void dummy1() {}
   template <class U>
   void dummy2();
 };
