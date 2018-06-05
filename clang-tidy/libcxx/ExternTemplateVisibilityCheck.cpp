@@ -32,11 +32,9 @@ AST_POLYMORPHIC_MATCHER(
     isExplicitInstantiation,
     AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl, VarDecl, CXXRecordDecl,
                                     ClassTemplateSpecializationDecl)) {
-
-  return (Node.getTemplateSpecializationKind() ==
-              TSK_ExplicitInstantiationDeclaration ||
-          Node.getTemplateSpecializationKind() ==
-              TSK_ExplicitInstantiationDefinition);
+  TemplateSpecializationKind TSK = Node.getTemplateSpecializationKind();
+  return (TSK == TSK_ExplicitInstantiationDeclaration ||
+          TSK == TSK_ExplicitInstantiationDefinition);
 }
 
 static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
@@ -79,11 +77,10 @@ AST_POLYMORPHIC_MATCHER(hasLibcxxVisibilityMacro,
 
 void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
   // FIXME: Add matchers.
-  Finder->addMatcher(
-      functionDecl(allOf(dummyMatcher(), isFromStdNamespace(),
-                         hasLibcxxVisibilityMacro(), isRedeclaration()))
-          .bind("func"),
-      this);
+  Finder->addMatcher(functionDecl(allOf(dummyMatcher(), isFromStdNamespace(),
+                                        isExplicitInstantiation()))
+                         .bind("func"),
+                     this);
 }
 
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
@@ -94,31 +91,40 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
 
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
-    assert(Res);
-    assert(ArgLoc.isValid());
-    CharSourceRange Range(ArgLoc, true);
-    if (FoundName != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
-      diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
+    if (Res) {
+      assert(ArgLoc.isValid());
+      CharSourceRange Range(ArgLoc, true);
+      if (FoundName != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
+        diag(ArgLoc, "function %0 is explicitly instantiated and hidden")
+            << FD
+            << FixItHint::CreateReplacement(
+                   Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+      }
+    } else {
+      diag(FD->getInnerLocStart(), "function %0 is missing declaration aoeu")
           << FD
-          << FixItHint::CreateReplacement(
-                 Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+          << FixItHint::CreateInsertion(
+                 FD->getInnerLocStart(),
+                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
     }
   }
   {
-    const FunctionDecl *Parent = FD->getCanonicalDecl();
+    const FunctionDecl *Parent = FD->getTemplateInstantiationPattern();
+    assert(Parent && Parent != FD);
+    Parent = Parent->getCanonicalDecl();
     assert(Parent && Parent != FD);
 
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, Parent, Name, MacroLoc, ArgLoc);
     if (!Res) {
-      diag(Parent->getLocStart(), "function %0 is missing declaration")
+      diag(Parent->getInnerLocStart(), "function %0 is missing declaration")
           << Parent
           << FixItHint::CreateInsertion(
-                 Parent->getLocStart(),
+                 Parent->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
 
-    } else if (Name != FoundName) {
+    } else if (Name.data() && Name != FoundName) {
       CharSourceRange Range(ArgLoc, true);
       diag(ArgLoc, "incorrect macro name %0")
           << Name

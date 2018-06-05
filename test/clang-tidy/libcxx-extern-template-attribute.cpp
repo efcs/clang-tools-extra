@@ -6,10 +6,15 @@ namespace std {
 template <class T>
 struct Foo {
   void bar();
+  void baz();
 };
 
 template <class T>
 _LIBCPP_INLINE_VISIBILITY void Foo<T>::bar() {
+}
+
+template <class T>
+void Foo<T>::baz() {
 }
 
 template struct Foo<int>;
