@@ -118,14 +118,9 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   }
   {
 
-    const FunctionDecl *Parent = FD->getCanonicalDecl();
-    assert(Parent);
-    if (IsInlineDef) {
+    const FunctionDecl *Parent = FD->getFirstDecl();
 
-      // assert(!isa<CXXMethodDecl>(Templ));
-      return;
-    }
-    assert(Parent && Parent != FD);
+    assert(Parent);
 
     StringRef Name;
     SourceLocation MacroLoc, ArgLoc;
@@ -137,15 +132,6 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                  Parent->getInnerLocStart(),
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
     }
-#if 0
-    else if (Name.data() && Name != FoundName) {
-      CharSourceRange Range(ArgLoc, true);
-      diag(ArgLoc, "incorrect macro name %0")
-          << Name << Parent->getSourceRange()
-          << FixItHint::CreateReplacement(
-                 Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
-    }
-#endif
   }
 }
 
