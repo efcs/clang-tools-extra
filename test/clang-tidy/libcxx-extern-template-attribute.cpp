@@ -7,6 +7,10 @@ template <class T>
 struct Foo {
   void bar();
   void baz();
+  template <class U>
+  void dummy1();
+  template <class U>
+  void dummy2();
 };
 
 template <class T>
@@ -16,6 +20,10 @@ _LIBCPP_INLINE_VISIBILITY void Foo<T>::bar() {
 template <class T>
 void Foo<T>::baz() {
 }
+
+template <class T>
+template <class U>
+void Foo<T>::dummy2() {}
 
 template struct Foo<int>;
 

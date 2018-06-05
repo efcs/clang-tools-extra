@@ -88,7 +88,11 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  ASTContext &Context) {
   StringRef FoundName;
   {
-
+    if (!FD->isInlineSpecified()) {
+      diag(FD->getInnerLocStart(), "function %0 is missing inline")
+          << FD
+          << FixItHint::CreateInsertion(FD->getInnerLocStart(), "inline ");
+    }
     SourceLocation MacroLoc, ArgLoc;
     bool Res = hasLibcxxMacro(Context, FD, FoundName, MacroLoc, ArgLoc);
     if (Res) {
@@ -101,11 +105,11 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                    Range, "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
       }
     } else {
-      diag(FD->getInnerLocStart(), "function %0 is missing declaration aoeu")
+      diag(FD->getInnerLocStart(), "function %0 is missing declaration")
           << FD
           << FixItHint::CreateInsertion(
                  FD->getInnerLocStart(),
-                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
     }
   }
   {
@@ -122,7 +126,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
           << Parent
           << FixItHint::CreateInsertion(
                  Parent->getInnerLocStart(),
-                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
+                 "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY ");
 
     } else if (Name.data() && Name != FoundName) {
       CharSourceRange Range(ArgLoc, true);
