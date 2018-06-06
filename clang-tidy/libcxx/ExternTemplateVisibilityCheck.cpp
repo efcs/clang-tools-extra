@@ -61,18 +61,20 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
       this);
 }
 
-static SourceRange getWhitespaceCorrectRange(SourceManager &SM,
-                                             SourceRange Range) {
+static CharSourceRange getWhitespaceCorrectRange(SourceManager &SM,
+                                                 CharSourceRange Range) {
   // FIXME(EricWF): Remove leading whitespace when removing a token.
   bool Invalid = false;
-  const char *TextAfter =
-      SM.getCharacterData(Range.getEnd().getLocWithOffset(1), &Invalid);
-  std::string After(TextAfter, 25);
-  llvm::errs() << "TextAfter = '" << After << "'\n";
-  if (Invalid)
+  const char *TextAfter = SM.getCharacterData(Range.getEnd(), &Invalid);
+  if (Invalid) {
     return Range;
+  }
+  std::string After(TextAfter, 25);
+  llvm::errs() << "After = '" << After << "'\n";
   unsigned Offset = std::strspn(TextAfter, " \t\r\n");
-  return SourceRange(Range.getBegin(), Range.getEnd().getLocWithOffset(Offset));
+  CharSourceRange NewRange = Range;
+  NewRange.setEnd(Range.getEnd().getLocWithOffset(Offset));
+  return NewRange;
 }
 
 std::string useTrailingSpace(SourceManager &SM, SourceLocation Loc,
@@ -103,12 +105,12 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     MacroInfo Info;
     if (hasLibcxxMacro(Context, FD, Info) && !FD->isFirstDecl()) {
       assert(Info.ExpansionRange.isValid());
-      SourceRange Range =
-          getWhitespaceCorrectRange(SM, Info.ExpansionRange.getAsRange());
+      CharSourceRange Range = Info.ExpansionRange;
       diag(Range.getBegin(),
            "visibility declaration does not occur on the first "
            "declaration of %0")
-          << FD << FixItHint::CreateRemoval(Range);
+          << FD
+          << FixItHint::CreateRemoval(getWhitespaceCorrectRange(SM, Range));
     }
   }
 
@@ -121,11 +123,10 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   // then insert 'inline' on the first declaration.
   if (!First->isInlineSpecified() && !IsInlineDef) {
     SourceLocation Loc = First->getInnerLocStart();
-    std::string Text = "inline";
-    useTrailingSpace(SM, Loc, Text);
     diag(Loc, "explicitly instantiated function %0 is missing inline")
         << First << First->getSourceRange()
-        << FixItHint::CreateInsertion(Loc, Text.c_str(), true);
+        << FixItHint::CreateInsertion(Loc, useTrailingSpace(SM, Loc, "inline"),
+                                      true);
   }
 
   // Don't mess with visibility declarations on destructors. Libc++ expects

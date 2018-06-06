@@ -40,6 +40,11 @@ bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
     Info.ArgLoc = Expansion.getExpansionLocStart();
     Info.MacroLoc = Expansion.getExpansionLocEnd();
     Info.ExpansionRange = Expansion.getExpansionLocRange();
+    assert(Info.ExpansionRange.isTokenRange());
+    SourceLocation EndLoc = Lexer::getLocForEndOfToken(
+        Expansion.getExpansionLocStart(), 0, SM, Context.getLangOpts());
+    Info.ExpansionRange.setEnd(EndLoc);
+    Info.ExpansionRange.setTokenRange(false);
 
     if (!Expansion.isMacroArgExpansion()) {
       Info.Name =
@@ -49,7 +54,6 @@ bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
 
     Info.MacroLoc = SM.getExpansionRange(Info.ArgLoc).getBegin();
     Info.ArgLoc = Expansion.getSpellingLoc().getLocWithOffset(LocInfo.second);
-    Info.ExpansionRange = Expansion.getExpansionLocRange();
 
     if (Info.ArgLoc.isFileID())
       return true;
