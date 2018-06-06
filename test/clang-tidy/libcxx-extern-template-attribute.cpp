@@ -51,19 +51,23 @@ _LIBCPP_INLINE_VISIBILITY void Foo<T>::bar() {}
 
 template <class T>
 void Foo<T>::baz() {}
+// CHECK-FIXES:{{^}}template <class T>
+// CHECK-FIXES-NEXT:{{^}}void Foo<T>::baz() {}
 
 
 // CHECK-MESSAGES: :[[@LINE+2]]:{{.*}}: warning: visibility declaration does not occur on the first declaration of 'foobar' [libcxx-extern-template]
 template <class T>
 _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY
 void Foo<T>::foobar() {}
-// CHECK-FIXES-NOT: _LIBCPP_EXTERN_TEMPLATE_VISIBILITY
-// CHECK-FIXES:{{^}}void Foo<T>::foobar() {}
+// CHECK-FIXES:{{^}}template <class T>
+// CHECK-FIXES-NEXT:{{^}}void Foo<T>::foobar() {}
+
 
 // CHECK-MESSAGES: :[[@LINE+2]]:{{.*}}: warning: visibility declaration does not occur on the first declaration of 'bababa' [libcxx-extern-template]
 template <class T>
 inline _LIBCPP_INLINE_VISIBILITY void Foo<T>::bababa() {}
 // CHECK-FIXES:{{^}}inline void Foo<T>::bababa() {}
+
 
 template <class T>
 template <class U>
