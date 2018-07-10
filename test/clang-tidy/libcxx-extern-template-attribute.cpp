@@ -2,7 +2,18 @@
 
 #define _LIBCPP_INLINE_VISIBILITY __attribute__((__always_inline__))
 #define _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY __attribute__((__always_inline__))
+#define _LIBCPP_NORETURN [[noreturn]]
+
 namespace std {
+
+template <bool>
+struct ThrowBase {
+  _LIBCPP_INLINE_VISIBILITY ThrowBase() {}
+};
+
+extern template ThrowBase<true>;
+extern template ThrowBase<false>;
+
 template <class T>
 struct Foo {
   // CHECK-MESSAGES: :[[@LINE+2]]:{{.*}}: warning: explicitly instantiated function 'bar' is missing inline [libcxx-extern-template]

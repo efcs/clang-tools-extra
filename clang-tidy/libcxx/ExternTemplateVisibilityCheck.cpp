@@ -70,7 +70,6 @@ static CharSourceRange getWhitespaceCorrectRange(SourceManager &SM,
     return Range;
   }
   std::string After(TextAfter, 25);
-  llvm::errs() << "After = '" << After << "'\n";
   unsigned Offset = std::strspn(TextAfter, " \t\r\n");
   CharSourceRange NewRange = Range;
   NewRange.setEnd(Range.getEnd().getLocWithOffset(Offset));
