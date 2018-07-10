@@ -25,8 +25,7 @@ AST_POLYMORPHIC_MATCHER(
     AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl, VarDecl, CXXRecordDecl,
                                     ClassTemplateSpecializationDecl)) {
   TemplateSpecializationKind TSK = Node.getTemplateSpecializationKind();
-  return (TSK == TSK_ExplicitInstantiationDeclaration ||
-          TSK == TSK_ExplicitInstantiationDefinition);
+  return (TSK == TSK_ExplicitInstantiationDefinition);
 }
 
 static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
@@ -57,7 +56,11 @@ static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
 void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       functionDecl(allOf(isFromStdNamespace(), isExplicitInstantiation(),
-                         isDefinition()))
+                         isDefinition(),
+                         anyOf(
+                                 hasAncestor(classTemplateSpecializationDecl(isExplicitInstantiation())),
+                                 hasAncestor(functionTemplateDecl()))
+                   ))
           .bind("func"),
       this);
 }

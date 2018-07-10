@@ -58,7 +58,7 @@ void Foo<T>::baz() {}
 // CHECK-FIXES-NEXT:{{^}}void Foo<T>::baz() {}
 
 
-// CHECK-MESSAGES: :[[@LINE+2]]:{{.*}}: warning: visibility declaration does not occur on the first declaration of 'foobar' [libcxx-extern-template]
+// CHECK-MESSAGES: :[[@LINE+3]]:{{.*}}: warning: visibility declaration does not occur on the first declaration of 'foobar' [libcxx-extern-template]
 template <class T>
 _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY
 void Foo<T>::foobar() {}
