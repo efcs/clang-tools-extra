@@ -11,8 +11,8 @@ struct ThrowBase {
   _LIBCPP_INLINE_VISIBILITY ThrowBase() {}
 };
 
-extern template ThrowBase<true>;
-extern template ThrowBase<false>;
+template struct ThrowBase<true>;
+template struct ThrowBase<false>;
 
 template <class T>
 struct Foo {
