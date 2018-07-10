@@ -9,7 +9,8 @@ namespace std {
 
 template <bool>
 struct ThrowBase {
-  _LIBCPP_INLINE_VISIBILITY ThrowBase() {}
+
+  _LIBCPP_ALWAYS_INLINE ThrowBase() {}
   _LIBCPP_NORETURN void noret();
 };
 
