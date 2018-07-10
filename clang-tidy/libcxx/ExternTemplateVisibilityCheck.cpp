@@ -40,7 +40,8 @@ static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
       return false;
 
     if (Info.Name == "_LIBCPP_INLINE_VISIBILITY" ||
-        Info.Name == "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY")
+        Info.Name == "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY" ||
+        Info.Name == "_LIBCPP_ALWAYS_INLINE")
       return true;
     return false;
   };
