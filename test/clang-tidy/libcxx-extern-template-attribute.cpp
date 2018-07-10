@@ -10,8 +10,11 @@ namespace std {
 template <bool>
 struct ThrowBase {
   _LIBCPP_INLINE_VISIBILITY ThrowBase() {}
+  _LIBCPP_NORETURN void noret();
 };
 
+template <bool _Bp>
+void ThrowBase<_Bp>::noret() {}
 
 extern template struct ThrowBase<true>;
 extern template struct ThrowBase<false>;
