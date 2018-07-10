@@ -6,22 +6,6 @@
 #define _LIBCPP_NORETURN [[noreturn]]
 
 namespace std {
-
-template <bool>
-struct ThrowBase {
-
-  _LIBCPP_ALWAYS_INLINE ThrowBase() {}
-  _LIBCPP_NORETURN void noret();
-};
-
-template <bool _Bp>
-void ThrowBase<_Bp>::noret() {}
-
-extern template struct ThrowBase<true>;
-extern template struct ThrowBase<false>;
-template struct ThrowBase<true>;
-template struct ThrowBase<false>;
-
 template <class T>
 struct Foo {
   // CHECK-MESSAGES: :[[@LINE+2]]:{{.*}}: warning: explicitly instantiated function 'bar' is missing inline [libcxx-extern-template]

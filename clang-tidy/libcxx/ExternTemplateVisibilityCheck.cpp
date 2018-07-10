@@ -106,7 +106,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     if (hasLibcxxMacro(Context, FD, Info) && !FD->isFirstDecl()) {
       assert(Info.ExpansionRange.isValid());
       CharSourceRange Range = Info.ExpansionRange;
-      diag(Range.getBegin(),
+      diag(FD->getLocation(),
            "visibility declaration does not occur on the first "
            "declaration of %0")
           << FD
@@ -123,7 +123,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
   // then insert 'inline' on the first declaration.
   if (!First->isInlineSpecified() && !IsInlineDef) {
     SourceLocation Loc = First->getInnerLocStart();
-    diag(Loc, "explicitly instantiated function %0 is missing inline")
+    diag(First->getLocation(), "explicitly instantiated function %0 is missing inline")
         << First << First->getSourceRange()
         << FixItHint::CreateInsertion(Loc, useTrailingSpace(SM, Loc, "inline"),
                                       true);
@@ -139,7 +139,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     // If there is no visibility attribute on the first declaration, insert
     // the correct one.
     if (!Res) {
-      diag(First->getInnerLocStart(),
+      diag(First->getLocation(),
            "function %0 is missing visibility declaration")
           << First << First->getSourceRange()
           << FixItHint::CreateInsertion(
@@ -151,9 +151,9 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     else if (Res && Info.Name != "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY") {
       assert(Info.ExpansionRange.isValid());
 
-      diag(Info.ExpansionRange.getBegin(),
+      diag(First->getLocation(),
            "function %0 has incorrect visibility declaration '%1'")
-          << Info.Name << First
+          << First << Info.Name
           << FixItHint::CreateReplacement(
                  Info.ExpansionRange,
                  "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY");
