@@ -1,7 +1,7 @@
 // RUN: %check_clang_tidy %s libcxx-extern-template %t
 
 #define _LIBCPP_INLINE_VISIBILITY __attribute__((__always_inline__))
-#define _LIBCPP_ALWAY_INLINE __attribute__((__always_inline__))
+#define _LIBCPP_ALWAYS_INLINE __attribute__((__always_inline__))
 #define _LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY __attribute__((__always_inline__))
 #define _LIBCPP_NORETURN [[noreturn]]
 
