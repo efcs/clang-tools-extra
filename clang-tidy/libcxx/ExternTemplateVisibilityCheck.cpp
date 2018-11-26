@@ -35,9 +35,12 @@ static bool hasLibcxxMacro(ASTContext &Context, const FunctionDecl *FD,
 
   SourceManager &SM = Context.getSourceManager();
   auto isMatchingMacro = [&](const Attr *A) {
-    if (!getMacroAndArgLocations(SM, Context, A->getLocation(), Info))
+    std::vector<MacroInfo> InfoList;
+    if (!getMacroAndArgLocationList(SM, Context, A->getLocation(), InfoList))
       return false;
 
+    assert(!InfoList.empty());
+    Info = InfoList.back();
     if (Info.Name == "_LIBCPP_INLINE_VISIBILITY" ||
         Info.Name == "_LIBCPP_EXTERN_TEMPLATE_INLINE_VISIBILITY" ||
         Info.Name == "_LIBCPP_ALWAYS_INLINE")

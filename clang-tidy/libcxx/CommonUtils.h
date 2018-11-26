@@ -127,6 +127,9 @@ struct MacroInfo {
 bool getMacroAndArgLocations(SourceManager &SM, ASTContext &Context,
                              SourceLocation Loc, MacroInfo &Info);
 
+bool getMacroAndArgLocationList(SourceManager &SM, ASTContext &Context,
+    SourceLocation Loc, std::vector<MacroInfo> &InfoList);
+
 bool isInLibcxxHeaderFile(const SourceManager &SM, const Decl *D);
 
 } // namespace libcxx
