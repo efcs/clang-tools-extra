@@ -173,7 +173,7 @@ extractNamedDecl(const TypeLoc *Loc) {
   auto UQ = Loc->getUnqualifiedLoc();
   Loc = &UQ;
   const NamedDecl *Decl = nullptr;
-  SourceLocation NameLoc = Loc->getLocStart();
+  SourceLocation NameLoc = Loc->getBeginLoc();
   if (const auto &Ref = Loc->getAs<TagTypeLoc>()) {
     Decl = Ref.getDecl();
     NameLoc = Ref.getNameLoc();
@@ -203,7 +203,7 @@ extractNamedDecl(const TypeLoc *Loc) {
 
   if (const auto &Ref = Loc->getAs<DependentTemplateSpecializationTypeLoc>()) {
     if (const auto *Decl = Ref.getTypePtr()->getAsTagDecl())
-      return {cast<NamedDecl>(Decl), Ref.getLocStart()};
+      return {cast<NamedDecl>(Decl), Ref.getBeginLoc()};
   }
   return {nullptr, NameLoc};
 }
@@ -213,7 +213,7 @@ extractDependentName(const TypeLoc *Loc) {
   auto UQ = Loc->getUnqualifiedLoc();
   Loc = &UQ;
   const NamedDecl *Decl = nullptr;
-  SourceLocation NameLoc = Loc->getLocStart();
+  SourceLocation NameLoc = Loc->getBeginLoc();
   if (const auto &Ref = Loc->getAs<TagTypeLoc>()) {
     Decl = Ref.getDecl();
     NameLoc = Ref.getNameLoc();
@@ -234,7 +234,7 @@ extractDependentName(const TypeLoc *Loc) {
   if (const auto &Ref = Loc->getAs<TemplateSpecializationTypeLoc>()) {
     const auto *ODecl = Ref.getTypePtr()->getTemplateName().getAsTemplateDecl();
     Decl = cast<NamedDecl>(ODecl);
-    NameLoc = Decl->getLocStart();
+    NameLoc = Decl->getBeginLoc();
     goto finish_extract;
   }
 
@@ -243,7 +243,7 @@ extractDependentName(const TypeLoc *Loc) {
     if (!ID) {
       return {};
     }
-    return {ID->getNameStart(), Ref.getLocStart()};
+    return {ID->getNameStart(), Ref.getBeginLoc()};
   }
 #if 0
   if (const auto &Ref = Loc->getAs<ElaboratedTypeLoc>()) {
@@ -473,7 +473,7 @@ void ReservedNamesCheck::checkDependentExpr(const Expr *E) {
       assert(!Base->getDecl() || D);
     }
     if (!Base || !D) {
-      diag(DME->getLocStart(), "possibly renamed member '%0'") << Name;
+      diag(DME->getBeginLoc(), "possibly renamed member '%0'") << Name;
       return;
     }
 
@@ -491,7 +491,7 @@ void ReservedNamesCheck::checkDependentExpr(const Expr *E) {
       const std::string &FromRDName = FoundRep->first;
       for (const auto &KV : Vec) {
         if (KV.second != FoundRep->second) {
-          diag(DME->getLocStart(), "ambigious something... '%0'") << Name;
+          diag(DME->getBeginLoc(), "ambigious something... '%0'") << Name;
           return;
         }
       }
@@ -578,7 +578,7 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
     Range = SourceRange(Pair.second);
     Loc = Pair.second;
     if (Loc.isInvalid()) {
-      assert(TL->getLocStart().isInvalid());
+      assert(TL->getBeginLoc().isInvalid());
       assert(TL->getBeginLoc().isInvalid());
       assert(TL->getLocalSourceRange().isInvalid());
       assert(TL->getUnqualifiedLoc().getSourceRange().isInvalid());
@@ -604,7 +604,7 @@ void ReservedNamesCheck::check(const MatchFinder::MatchResult &Result) {
     } else if (const auto *TS =
                    dyn_cast<SubstNonTypeTemplateParmPackExpr>(TPS)) {
       ND = cast<NamedDecl>(TS->getParameterPack());
-      Loc = TS->getLocStart();
+      Loc = TS->getBeginLoc();
       Range = TS->getSourceRange();
 
     } else {
