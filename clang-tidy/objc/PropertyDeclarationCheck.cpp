@@ -34,7 +34,7 @@ enum NamingStyle {
   CategoryProperty = 2,
 };
 
-/// The acronyms are from
+/// The acronyms are aggregated from multiple sources including
 /// https://developer.apple.com/library/content/documentation/Cocoa/Conceptual/CodingGuidelines/Articles/APIAbbreviations.html#//apple_ref/doc/uid/20001285-BCIHCGAE
 ///
 /// Keep this list sorted.
@@ -42,14 +42,19 @@ constexpr llvm::StringLiteral DefaultSpecialAcronyms[] = {
     "[2-9]G",
     "ACL",
     "API",
+    "APN",
+    "APNS",
     "AR",
     "ARGB",
     "ASCII",
+    "AV",
     "BGRA",
     "CA",
+    "CDN",
     "CF",
     "CG",
     "CI",
+    "CRC",
     "CV",
     "CMYK",
     "DNS",
@@ -61,6 +66,7 @@ constexpr llvm::StringLiteral DefaultSpecialAcronyms[] = {
     "GUID",
     "HD",
     "HDR",
+    "HMAC",
     "HTML",
     "HTTP",
     "HTTPS",
@@ -68,12 +74,17 @@ constexpr llvm::StringLiteral DefaultSpecialAcronyms[] = {
     "ID",
     "JPG",
     "JS",
+    "JSON",
     "LAN",
     "LZW",
+    "LTR",
+    "MAC",
+    "MD",
     "MDNS",
     "MIDI",
     "NS",
     "OS",
+    "P2P",
     "PDF",
     "PIN",
     "PNG",
@@ -85,21 +96,26 @@ constexpr llvm::StringLiteral DefaultSpecialAcronyms[] = {
     "RGB",
     "RGBA",
     "RGBX",
+    "RIPEMD",
     "ROM",
     "RPC",
     "RTF",
     "RTL",
     "SC",
     "SDK",
+    "SHA",
+    "SQL",
     "SSO",
     "TCP",
     "TIFF",
+    "TOS",
     "TTS",
     "UI",
     "URI",
     "URL",
     "UUID",
     "VC",
+    "VO",
     "VOIP",
     "VPN",
     "VR",
@@ -153,7 +169,7 @@ std::string validPropertyNameRegex(llvm::ArrayRef<std::string> EscapedAcronyms,
   std::string StartMatcher = UsedInMatcher ? "::" : "^";
   std::string AcronymsMatcher = AcronymsGroupRegex(EscapedAcronyms);
   return StartMatcher + "(" + AcronymsMatcher + "[A-Z]?)?[a-z]+[a-z0-9]*(" +
-         AcronymsMatcher + "|([A-Z][a-z0-9]+))*$";
+         AcronymsMatcher + "|([A-Z][a-z0-9]+)|A|I)*$";
 }
 
 bool hasCategoryPropertyPrefix(llvm::StringRef PropertyName) {
@@ -185,9 +201,8 @@ PropertyDeclarationCheck::PropertyDeclarationCheck(StringRef Name,
 
 void PropertyDeclarationCheck::registerMatchers(MatchFinder *Finder) {
   // this check should only be applied to ObjC sources.
-  if (!getLangOpts().ObjC1 && !getLangOpts().ObjC2) {
-    return;
-  }
+  if (!getLangOpts().ObjC) return;
+
   if (IncludeDefaultAcronyms) {
     EscapedAcronyms.reserve(llvm::array_lengthof(DefaultSpecialAcronyms) +
                             SpecialAcronyms.size());
@@ -219,9 +234,9 @@ void PropertyDeclarationCheck::check(const MatchFinder::MatchResult &Result) {
   auto *DeclContext = MatchedDecl->getDeclContext();
   auto *CategoryDecl = llvm::dyn_cast<ObjCCategoryDecl>(DeclContext);
 
-  auto AcronymsRegex =
-      llvm::Regex("^" + AcronymsGroupRegex(EscapedAcronyms) + "$");
-  if (AcronymsRegex.match(MatchedDecl->getName())) {
+  auto SingleAcronymRegex =
+      llvm::Regex("^([a-zA-Z]+_)?" + AcronymsGroupRegex(EscapedAcronyms) + "$");
+  if (SingleAcronymRegex.match(MatchedDecl->getName())) {
     return;
   }
   if (CategoryDecl != nullptr &&

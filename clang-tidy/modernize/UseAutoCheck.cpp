@@ -11,6 +11,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Tooling/FixIt.h"
 
 using namespace clang;
@@ -26,6 +27,34 @@ const char IteratorDeclStmtId[] = "iterator_decl";
 const char DeclWithNewId[] = "decl_new";
 const char DeclWithCastId[] = "decl_cast";
 const char DeclWithTemplateCastId[] = "decl_template";
+
+size_t GetTypeNameLength(bool RemoveStars, StringRef Text) {
+  enum CharType { Space, Alpha, Punctuation };
+  CharType LastChar = Space, BeforeSpace = Punctuation;
+  size_t NumChars = 0;
+  int TemplateTypenameCntr = 0;
+  for (const unsigned char C : Text) {
+    if (C == '<')
+      ++TemplateTypenameCntr;
+    else if (C == '>')
+      --TemplateTypenameCntr;
+    const CharType NextChar =
+        isAlphanumeric(C)
+            ? Alpha
+            : (isWhitespace(C) ||
+               (!RemoveStars && TemplateTypenameCntr == 0 && C == '*'))
+                  ? Space
+                  : Punctuation;
+    if (NextChar != Space) {
+      ++NumChars; // Count the non-space character.
+      if (LastChar == Space && NextChar == Alpha && BeforeSpace == Alpha)
+        ++NumChars; // Count a single space character between two words.
+      BeforeSpace = NextChar;
+    }
+    LastChar = NextChar;
+  }
+  return NumChars;
+}
 
 /// \brief Matches variable declarations that have explicit initializers that
 /// are not initializer lists.
@@ -182,7 +211,7 @@ AST_POLYMORPHIC_MATCHER(hasExplicitTemplateArgs,
 /// \brief Returns a DeclarationMatcher that matches standard iterators nested
 /// inside records with a standard container name.
 DeclarationMatcher standardIterator() {
-  return allOf(
+  return decl(
       namedDecl(hasStdIteratorName()),
       hasDeclContext(recordDecl(hasStdContainerName(), isFromStdNamespace())));
 }
@@ -204,7 +233,7 @@ TypeMatcher nestedIterator() {
 TypeMatcher iteratorFromUsingDeclaration() {
   auto HasIteratorDecl = hasDeclaration(namedDecl(hasStdIteratorName()));
   // Types resulting from using declarations are represented by elaboratedType.
-  return elaboratedType(allOf(
+  return elaboratedType(
       // Unwrap the nested name specifier to test for one of the standard
       // containers.
       hasQualifier(specifiesType(templateSpecializationType(hasDeclaration(
@@ -212,7 +241,7 @@ TypeMatcher iteratorFromUsingDeclaration() {
       // the named type is what comes after the final '::' in the type. It
       // should name one of the standard iterator names.
       namesType(
-          anyOf(typedefType(HasIteratorDecl), recordType(HasIteratorDecl)))));
+          anyOf(typedefType(HasIteratorDecl), recordType(HasIteratorDecl))));
 }
 
 /// \brief This matcher returns declaration statements that contain variable
@@ -419,8 +448,10 @@ void UseAutoCheck::replaceExpr(
   SourceRange Range(Loc.getSourceRange());
 
   if (MinTypeNameLength != 0 &&
-      tooling::fixit::getText(Loc.getSourceRange(), FirstDecl->getASTContext())
-              .size() < MinTypeNameLength)
+      GetTypeNameLength(RemoveStars,
+                        tooling::fixit::getText(Loc.getSourceRange(),
+                                                FirstDecl->getASTContext())) <
+          MinTypeNameLength)
     return;
 
   auto Diag = diag(Range.getBegin(), Message);

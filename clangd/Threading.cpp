@@ -1,9 +1,14 @@
 #include "Threading.h"
+#include "Trace.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Threading.h"
 #include <thread>
+#ifdef __USE_POSIX
+#include <pthread.h>
+#endif
 
+using namespace llvm;
 namespace clang {
 namespace clangd {
 
@@ -23,9 +28,14 @@ void Notification::wait() const {
 Semaphore::Semaphore(std::size_t MaxLocks) : FreeSlots(MaxLocks) {}
 
 void Semaphore::lock() {
-  std::unique_lock<std::mutex> Lock(Mutex);
-  SlotsChanged.wait(Lock, [&]() { return FreeSlots > 0; });
-  --FreeSlots;
+  trace::Span Span("WaitForFreeSemaphoreSlot");
+  // trace::Span can also acquire locks in ctor and dtor, we make sure it
+  // happens when Semaphore's own lock is not held.
+  {
+    std::unique_lock<std::mutex> Lock(Mutex);
+    SlotsChanged.wait(Lock, [&]() { return FreeSlots > 0; });
+    --FreeSlots;
+  }
 }
 
 void Semaphore::unlock() {
@@ -44,14 +54,14 @@ bool AsyncTaskRunner::wait(Deadline D) const {
                       [&] { return InFlightTasks == 0; });
 }
 
-void AsyncTaskRunner::runAsync(llvm::Twine Name,
-                               UniqueFunction<void()> Action) {
+void AsyncTaskRunner::runAsync(const Twine &Name,
+                               unique_function<void()> Action) {
   {
     std::lock_guard<std::mutex> Lock(Mutex);
     ++InFlightTasks;
   }
 
-  auto CleanupTask = llvm::make_scope_exit([this]() {
+  auto CleanupTask = make_scope_exit([this]() {
     std::lock_guard<std::mutex> Lock(Mutex);
     int NewTasksCnt = --InFlightTasks;
     if (NewTasksCnt == 0) {
@@ -63,7 +73,7 @@ void AsyncTaskRunner::runAsync(llvm::Twine Name,
 
   std::thread(
       [](std::string Name, decltype(Action) Action, decltype(CleanupTask)) {
-        llvm::set_thread_name(Name);
+        set_thread_name(Name);
         Action();
         // Make sure function stored by Action is destroyed before CleanupTask
         // is run.
@@ -73,7 +83,7 @@ void AsyncTaskRunner::runAsync(llvm::Twine Name,
       .detach();
 }
 
-Deadline timeoutSeconds(llvm::Optional<double> Seconds) {
+Deadline timeoutSeconds(Optional<double> Seconds) {
   using namespace std::chrono;
   if (!Seconds)
     return Deadline::infinity();
@@ -88,6 +98,17 @@ void wait(std::unique_lock<std::mutex> &Lock, std::condition_variable &CV,
   if (D == Deadline::infinity())
     return CV.wait(Lock);
   CV.wait_until(Lock, D.time());
+}
+
+void setThreadPriority(std::thread &T, ThreadPriority Priority) {
+  // Some *really* old glibcs are missing SCHED_IDLE.
+#if defined(__linux__) && defined(SCHED_IDLE)
+  sched_param priority;
+  priority.sched_priority = 0;
+  pthread_setschedparam(
+      T.native_handle(),
+      Priority == ThreadPriority::Low ? SCHED_IDLE : SCHED_OTHER, &priority);
+#endif
 }
 
 } // namespace clangd

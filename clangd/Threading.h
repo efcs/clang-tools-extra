@@ -17,6 +17,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace clang {
@@ -108,13 +109,20 @@ public:
   void wait() const { (void)wait(Deadline::infinity()); }
   LLVM_NODISCARD bool wait(Deadline D) const;
   // The name is used for tracing and debugging (e.g. to name a spawned thread).
-  void runAsync(llvm::Twine Name, UniqueFunction<void()> Action);
+  void runAsync(const llvm::Twine &Name, llvm::unique_function<void()> Action);
 
 private:
   mutable std::mutex Mutex;
   mutable std::condition_variable TasksReachedZero;
   std::size_t InFlightTasks = 0;
 };
+
+enum class ThreadPriority {
+  Low = 0,
+  Normal = 1,
+};
+void setThreadPriority(std::thread &T, ThreadPriority Priority);
+
 } // namespace clangd
 } // namespace clang
 #endif

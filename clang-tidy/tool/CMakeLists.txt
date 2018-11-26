@@ -30,7 +30,6 @@ target_link_libraries(clang-tidy
   clangTidyLibcxxModule
   clangTidyMiscModule
   clangTidyModernizeModule
-  clangTidyMPIModule
   clangTidyObjCModule
   clangTidyPerformanceModule
   clangTidyPortabilityModule
@@ -39,6 +38,12 @@ target_link_libraries(clang-tidy
   clangTooling
   clangToolingCore
   )
+
+if(CLANG_ENABLE_STATIC_ANALYZER)
+  target_link_libraries(clang-tidy PRIVATE
+    clangTidyMPIModule
+  )
+endif()
 
 install(PROGRAMS clang-tidy-diff.py
   DESTINATION share/clang

@@ -16,8 +16,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "../ClangTidy.h"
+#include "clang/Config/config.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace clang::ast_matchers;
@@ -181,6 +183,15 @@ report to stderr.
                                         cl::init(false),
                                         cl::cat(ClangTidyCategory));
 
+static cl::opt<std::string> StoreCheckProfile("store-check-profile",
+                                              cl::desc(R"(
+By default reports are printed in tabulated
+format to stderr. When this option is passed,
+these per-TU profiles are instead stored as JSON.
+)"),
+                                              cl::value_desc("prefix"),
+                                              cl::cat(ClangTidyCategory));
+
 /// This option allows enabling the experimental alpha checkers from the static
 /// analyzer. This option is set to false and not visible in help, because it is
 /// highly not recommended for users.
@@ -318,6 +329,7 @@ getVfsOverlayFromFile(const std::string &OverlayFile) {
 }
 
 static int clangTidyMain(int argc, const char **argv) {
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   CommonOptionsParser OptionsParser(argc, argv, ClangTidyCategory,
                                     cl::ZeroOrMore);
   llvm::IntrusiveRefCntPtr<vfs::FileSystem> BaseFS(
@@ -331,17 +343,27 @@ static int clangTidyMain(int argc, const char **argv) {
   if (!OptionsProvider)
     return 1;
 
+  auto MakeAbsolute = [](const std::string &Input) -> SmallString<256> {
+    if (Input.empty())
+      return {};
+    SmallString<256> AbsolutePath(Input);
+    if (std::error_code EC = llvm::sys::fs::make_absolute(AbsolutePath)) {
+      llvm::errs() << "Can't make absolute path from " << Input << ": "
+                   << EC.message() << "\n";
+    }
+    return AbsolutePath;
+  };
+
+  SmallString<256> ProfilePrefix = MakeAbsolute(StoreCheckProfile);
+
   StringRef FileName("dummy");
   auto PathList = OptionsParser.getSourcePathList();
   if (!PathList.empty()) {
     FileName = PathList.front();
   }
 
-  SmallString<256> FilePath(FileName);
-  if (std::error_code EC = llvm::sys::fs::make_absolute(FilePath)) {
-    llvm::errs() << "Can't make absolute path from " << FileName << ": "
-                 << EC.message() << "\n";
-  }
+  SmallString<256> FilePath = MakeAbsolute(FileName);
+
   ClangTidyOptions EffectiveOptions = OptionsProvider->getOptions(FilePath);
   std::vector<std::string> EnabledChecks =
       getCheckNames(EffectiveOptions, AllowEnablingAnalyzerAlphaCheckers);
@@ -402,9 +424,9 @@ static int clangTidyMain(int argc, const char **argv) {
 
   ClangTidyContext Context(std::move(OwningOptionsProvider),
                            AllowEnablingAnalyzerAlphaCheckers);
-  runClangTidy(Context, OptionsParser.getCompilations(), PathList, BaseFS,
-               EnableCheckProfile);
-  ArrayRef<ClangTidyError> Errors = Context.getErrors();
+  std::vector<ClangTidyError> Errors =
+      runClangTidy(Context, OptionsParser.getCompilations(), PathList, BaseFS,
+                   EnableCheckProfile, ProfilePrefix);
   bool FoundErrors = llvm::find_if(Errors, [](const ClangTidyError &E) {
                        return E.DiagLevel == ClangTidyError::Error;
                      }) != Errors.end();
@@ -414,7 +436,7 @@ static int clangTidyMain(int argc, const char **argv) {
   unsigned WErrorCount = 0;
 
   // -fix-errors implies -fix.
-  handleErrors(Context, (FixErrors || Fix) && !DisableFixes, WErrorCount,
+  handleErrors(Errors, Context, (FixErrors || Fix) && !DisableFixes, WErrorCount,
                BaseFS);
 
   if (!ExportFixes.empty() && !Errors.empty()) {
@@ -520,10 +542,12 @@ extern volatile int ModernizeModuleAnchorSource;
 static int LLVM_ATTRIBUTE_UNUSED ModernizeModuleAnchorDestination =
     ModernizeModuleAnchorSource;
 
+#if CLANG_ENABLE_STATIC_ANALYZER
 // This anchor is used to force the linker to link the MPIModule.
 extern volatile int MPIModuleAnchorSource;
 static int LLVM_ATTRIBUTE_UNUSED MPIModuleAnchorDestination =
     MPIModuleAnchorSource;
+#endif
 
 // This anchor is used to force the linker to link the PerformanceModule.
 extern volatile int PerformanceModuleAnchorSource;

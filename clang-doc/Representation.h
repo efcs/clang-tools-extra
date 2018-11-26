@@ -17,6 +17,7 @@
 
 #include "clang/AST/Type.h"
 #include "clang/Basic/Specifiers.h"
+#include "clang/Tooling/StandaloneExecution.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -30,6 +31,9 @@ namespace doc {
 using SymbolID = std::array<uint8_t, 20>;
 
 struct Info;
+struct FunctionInfo;
+struct EnumInfo;
+
 enum class InfoType {
   IT_default,
   IT_namespace,
@@ -44,13 +48,14 @@ struct CommentInfo {
   CommentInfo(CommentInfo &Other) = delete;
   CommentInfo(CommentInfo &&Other) = default;
 
-  SmallString<16> Kind; // Kind of comment (TextComment, InlineCommandComment,
-                        // HTMLStartTagComment, HTMLEndTagComment,
-                        // BlockCommandComment, ParamCommandComment,
-                        // TParamCommandComment, VerbatimBlockComment,
-                        // VerbatimBlockLineComment, VerbatimLineComment).
-  SmallString<64> Text; // Text of the comment.
-  SmallString<16> Name; // Name of the comment (for Verbatim and HTML).
+  SmallString<16>
+      Kind; // Kind of comment (FullComment, ParagraphComment, TextComment,
+            // InlineCommandComment, HTMLStartTagComment, HTMLEndTagComment,
+            // BlockCommandComment, ParamCommandComment,
+            // TParamCommandComment, VerbatimBlockComment,
+            // VerbatimBlockLineComment, VerbatimLineComment).
+  SmallString<64> Text;      // Text of the comment.
+  SmallString<16> Name;      // Name of the comment (for Verbatim and HTML).
   SmallString<8> Direction;  // Parameter direction (for (T)ParamCommand).
   SmallString<16> ParamName; // Parameter name (for (T)ParamCommand).
   SmallString<16> CloseName; // Closing tag name (for VerbatimBlock).
@@ -73,6 +78,11 @@ struct Reference {
   Reference(SymbolID USR, StringRef Name, InfoType IT)
       : USR(USR), Name(Name), RefType(IT) {}
 
+  bool operator==(const Reference &Other) const {
+    return std::tie(USR, Name, RefType) ==
+           std::tie(Other.USR, Other.Name, Other.RefType);
+  }
+
   SymbolID USR = SymbolID(); // Unique identifer for referenced decl
   SmallString<16> Name;      // Name of type (possibly unresolved).
   InfoType RefType = InfoType::IT_default; // Indicates the type of this
@@ -87,6 +97,8 @@ struct TypeInfo {
       : Type(Type, Field, IT) {}
   TypeInfo(llvm::StringRef RefName) : Type(RefName) {}
 
+  bool operator==(const TypeInfo &Other) const { return Type == Other.Type; }
+
   Reference Type; // Referenced type in this info.
 };
 
@@ -98,6 +110,10 @@ struct FieldTypeInfo : public TypeInfo {
       : TypeInfo(Type, Field, IT), Name(Name) {}
   FieldTypeInfo(llvm::StringRef RefName, llvm::StringRef Name)
       : TypeInfo(RefName), Name(Name) {}
+
+  bool operator==(const FieldTypeInfo &Other) const {
+    return std::tie(Type, Name) == std::tie(Other.Type, Other.Name);
+  }
 
   SmallString<16> Name; // Name associated with this info.
 };
@@ -112,6 +128,11 @@ struct MemberTypeInfo : public FieldTypeInfo {
                  AccessSpecifier Access)
       : FieldTypeInfo(RefName, Name), Access(Access) {}
 
+  bool operator==(const MemberTypeInfo &Other) const {
+    return std::tie(Type, Name, Access) ==
+           std::tie(Other.Type, Other.Name, Other.Access);
+  }
+
   AccessSpecifier Access = AccessSpecifier::AS_none; // Access level associated
                                                      // with this info (public,
                                                      // protected, private,
@@ -123,6 +144,11 @@ struct Location {
   Location(int LineNumber, SmallString<16> Filename)
       : LineNumber(LineNumber), Filename(std::move(Filename)) {}
 
+  bool operator==(const Location &Other) const {
+    return std::tie(LineNumber, Filename) ==
+           std::tie(Other.LineNumber, Other.Filename);
+  }
+
   int LineNumber;           // Line number of this Location.
   SmallString<32> Filename; // File for this Location.
 };
@@ -131,8 +157,13 @@ struct Location {
 struct Info {
   Info() = default;
   Info(InfoType IT) : IT(IT) {}
+  Info(InfoType IT, SymbolID USR) : USR(USR), IT(IT) {}
+  Info(InfoType IT, SymbolID USR, StringRef Name)
+      : USR(USR), IT(IT), Name(Name) {}
   Info(const Info &Other) = delete;
   Info(Info &&Other) = default;
+
+  virtual ~Info() = default;
 
   SymbolID USR =
       SymbolID(); // Unique identifier for the decl described by this Info.
@@ -144,18 +175,36 @@ struct Info {
 
   void mergeBase(Info &&I);
   bool mergeable(const Info &Other);
+
+  // Returns a reference to the parent scope (that is, the immediate parent
+  // namespace or class in which this decl resides).
+  llvm::Expected<Reference> getEnclosingScope();
 };
 
 // Info for namespaces.
 struct NamespaceInfo : public Info {
   NamespaceInfo() : Info(InfoType::IT_namespace) {}
+  NamespaceInfo(SymbolID USR) : Info(InfoType::IT_namespace, USR) {}
+  NamespaceInfo(SymbolID USR, StringRef Name)
+      : Info(InfoType::IT_namespace, USR, Name) {}
 
   void merge(NamespaceInfo &&I);
+
+  // Namespaces and Records are references because they will be properly
+  // documented in their own info, while the entirety of Functions and Enums are
+  // included here because they should not have separate documentation from
+  // their scope.
+  std::vector<Reference> ChildNamespaces;
+  std::vector<Reference> ChildRecords;
+  std::vector<FunctionInfo> ChildFunctions;
+  std::vector<EnumInfo> ChildEnums;
 };
 
 // Info for symbols.
 struct SymbolInfo : public Info {
   SymbolInfo(InfoType IT) : Info(IT) {}
+  SymbolInfo(InfoType IT, SymbolID USR) : Info(IT, USR) {}
+  SymbolInfo(InfoType IT, SymbolID USR, StringRef Name) : Info(IT, USR, Name) {}
 
   void merge(SymbolInfo &&I);
 
@@ -167,16 +216,16 @@ struct SymbolInfo : public Info {
 // Info for functions.
 struct FunctionInfo : public SymbolInfo {
   FunctionInfo() : SymbolInfo(InfoType::IT_function) {}
+  FunctionInfo(SymbolID USR) : SymbolInfo(InfoType::IT_function, USR) {}
 
   void merge(FunctionInfo &&I);
 
   bool IsMethod = false; // Indicates whether this function is a class method.
   Reference Parent;      // Reference to the parent class decl for this method.
   TypeInfo ReturnType;   // Info about the return type of this function.
-  llvm::SmallVector<FieldTypeInfo, 4> Params;        // List of parameters.
-  AccessSpecifier Access = AccessSpecifier::AS_none; // Access level for this
-                                                     // method (public, private,
-                                                     // protected, none).
+  llvm::SmallVector<FieldTypeInfo, 4> Params; // List of parameters.
+  // Access level for this method (public, private, protected, none).
+  AccessSpecifier Access = AccessSpecifier::AS_none;
 };
 
 // TODO: Expand to allow for documenting templating, inheritance access,
@@ -184,6 +233,9 @@ struct FunctionInfo : public SymbolInfo {
 // Info for types.
 struct RecordInfo : public SymbolInfo {
   RecordInfo() : SymbolInfo(InfoType::IT_record) {}
+  RecordInfo(SymbolID USR) : SymbolInfo(InfoType::IT_record, USR) {}
+  RecordInfo(SymbolID USR, StringRef Name)
+      : SymbolInfo(InfoType::IT_record, USR, Name) {}
 
   void merge(RecordInfo &&I);
 
@@ -197,12 +249,21 @@ struct RecordInfo : public SymbolInfo {
                                            // parents).
   llvm::SmallVector<Reference, 4>
       VirtualParents; // List of virtual base/parent records.
+
+  // Records are references because they will be properly
+  // documented in their own info, while the entirety of Functions and Enums are
+  // included here because they should not have separate documentation from
+  // their scope.
+  std::vector<Reference> ChildRecords;
+  std::vector<FunctionInfo> ChildFunctions;
+  std::vector<EnumInfo> ChildEnums;
 };
 
 // TODO: Expand to allow for documenting templating.
 // Info for types.
 struct EnumInfo : public SymbolInfo {
   EnumInfo() : SymbolInfo(InfoType::IT_enum) {}
+  EnumInfo(SymbolID USR) : SymbolInfo(InfoType::IT_enum, USR) {}
 
   void merge(EnumInfo &&I);
 
@@ -218,6 +279,11 @@ struct EnumInfo : public SymbolInfo {
 // if they are different.
 llvm::Expected<std::unique_ptr<Info>>
 mergeInfos(std::vector<std::unique_ptr<Info>> &Values);
+
+struct ClangDocContext {
+  tooling::ExecutionContext *ECtx;
+  bool PublicOnly;
+};
 
 } // namespace doc
 } // namespace clang
