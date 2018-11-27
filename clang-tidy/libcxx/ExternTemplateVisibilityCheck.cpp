@@ -68,34 +68,6 @@ void ExternTemplateVisibilityCheck::registerMatchers(MatchFinder *Finder) {
       this);
 }
 
-static CharSourceRange getWhitespaceCorrectRange(SourceManager &SM,
-                                                 CharSourceRange Range) {
-  // FIXME(EricWF): Remove leading whitespace when removing a token.
-  bool Invalid = false;
-  const char *TextAfter = SM.getCharacterData(Range.getEnd(), &Invalid);
-  if (Invalid) {
-    return Range;
-  }
-  std::string After(TextAfter, 25);
-  unsigned Offset = std::strspn(TextAfter, " \t\r\n");
-  CharSourceRange NewRange = Range;
-  NewRange.setEnd(Range.getEnd().getLocWithOffset(Offset));
-  return NewRange;
-}
-
-std::string useTrailingSpace(SourceManager &SM, SourceLocation Loc,
-                             StringRef Str) {
-  std::string Res = Str.data();
-
-  bool Invalid;
-  const char *TextAfter =
-      SM.getCharacterData(Loc.getLocWithOffset(1), &Invalid);
-
-  if (!Invalid && *TextAfter != '\n')
-    Res += " ";
-  return Res;
-}
-
 void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
                                                  SourceManager &SM,
                                                  ASTContext &Context) {
@@ -131,7 +103,7 @@ void ExternTemplateVisibilityCheck::performFixIt(const FunctionDecl *FD,
     SourceLocation Loc = First->getInnerLocStart();
     diag(First->getLocation(), "explicitly instantiated function %0 is missing inline")
         << First << First->getSourceRange()
-        << FixItHint::CreateInsertion(Loc, useTrailingSpace(SM, Loc, "inline"),
+        << FixItHint::CreateInsertion(Loc, nameWithTrailingSpace(SM, Loc, "inline"),
                                       true);
   }
 

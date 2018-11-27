@@ -140,6 +140,36 @@ bool isInLibcxxHeaderFile(const clang::SourceManager &SM,
   return true;
 }
 
+
+CharSourceRange getWhitespaceCorrectRange(SourceManager &SM,
+                                          CharSourceRange Range) {
+  // FIXME(EricWF): Remove leading whitespace when removing a token.
+  bool Invalid = false;
+  const char *TextAfter = SM.getCharacterData(Range.getEnd(), &Invalid);
+  if (Invalid) {
+    return Range;
+  }
+  std::string After(TextAfter, 25);
+  unsigned Offset = std::strspn(TextAfter, " \t\r\n");
+  CharSourceRange NewRange = Range;
+  NewRange.setEnd(Range.getEnd().getLocWithOffset(Offset));
+  return NewRange;
+}
+
+
+std::string nameWithTrailingSpace(SourceManager &SM, SourceLocation Loc,
+                                  StringRef Str) {
+  std::string Res = Str.data();
+
+  bool Invalid;
+  const char *TextAfter =
+      SM.getCharacterData(Loc.getLocWithOffset(1), &Invalid);
+
+  if (!Invalid && *TextAfter != '\n')
+    Res += " ";
+  return Res;
+}
+
 } // namespace libcxx
 } // namespace tidy
 } // namespace clang

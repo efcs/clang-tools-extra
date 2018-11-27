@@ -132,6 +132,13 @@ bool getMacroAndArgLocationList(SourceManager &SM, ASTContext &Context,
 
 bool isInLibcxxHeaderFile(const SourceManager &SM, const Decl *D);
 
+
+CharSourceRange getWhitespaceCorrectRange(SourceManager &SM,
+                                          CharSourceRange Range);
+
+std::string nameWithTrailingSpace(SourceManager &SM, SourceLocation Loc,
+                             StringRef Str);
+
 } // namespace libcxx
 } // namespace tidy
 } // namespace clang
