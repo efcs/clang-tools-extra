@@ -1,6 +1,7 @@
 set(LLVM_LINK_COMPONENTS support)
 
 add_clang_library(clangTidyGoogleModule
+  ADLCallCheck.cpp
   AvoidCStyleCastsCheck.cpp
   AvoidThrowingObjCExceptionCheck.cpp
   DefaultArgumentsCheck.cpp
@@ -25,4 +26,5 @@ add_clang_library(clangTidyGoogleModule
   clangTidy
   clangTidyReadabilityModule
   clangTidyUtils
+  clangToolingCore
   )

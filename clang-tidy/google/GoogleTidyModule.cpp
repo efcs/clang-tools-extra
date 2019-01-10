@@ -13,6 +13,7 @@
 #include "../readability/BracesAroundStatementsCheck.h"
 #include "../readability/FunctionSizeCheck.h"
 #include "../readability/NamespaceCommentCheck.h"
+#include "ADLCallCheck.h"
 #include "AvoidCStyleCastsCheck.h"
 #include "AvoidThrowingObjCExceptionCheck.h"
 #include "DefaultArgumentsCheck.h"
@@ -37,6 +38,7 @@ namespace google {
 class GoogleModule : public ClangTidyModule {
  public:
   void addCheckFactories(ClangTidyCheckFactories &CheckFactories) override {
+    CheckFactories.registerCheck<ADLCallCheck>("google-adl-call");
     CheckFactories.registerCheck<build::ExplicitMakePairCheck>(
         "google-build-explicit-make-pair");
     CheckFactories.registerCheck<build::UnnamedNamespaceInHeaderCheck>(
